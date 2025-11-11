@@ -2,5 +2,5 @@
 const std = @import("std");
 
 test {
-    std.testing.refAllDecls(@import("register.zig"));
+    std.testing.refAllDecls(@import("./core/cpu/register.zig"));
 }
