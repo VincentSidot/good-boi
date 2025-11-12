@@ -56,7 +56,9 @@ pub const Register16 = enum(usize) {
 
 /// 16-bit registers that can be used to access memory indirectly
 pub const Register16Memory = enum(usize) {
-    hl_indirect = @intFromEnum(Register16.hl),
+    bc = @intFromEnum(Register16.bc),
+    de = @intFromEnum(Register16.de),
+    hl = @intFromEnum(Register16.hl),
 
     pub fn asReg16(self: Register16Memory) Register16 {
         const value = @intFromEnum(self);
@@ -151,7 +153,9 @@ pub fn asText(comptime reg: anytype) []const u8 {
             }
         } else if (regType == Register16Memory) {
             switch (reg) {
-                .hl_indirect => return "(HL)",
+                .bc => return "(BC)",
+                .de => return "(DE)",
+                .hl => return "(HL)",
             }
         } else {
             @compileError("Unsupported register type");

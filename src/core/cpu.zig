@@ -9,6 +9,25 @@ const Memory = ram.Memory;
 pub const Cpu = struct {
     reg: Registers = Registers.zeroed(),
     ram: Memory = Memory.init(),
+
+    pub fn init() Cpu {
+        return Cpu{};
+    }
+
+    pub fn fetch(self: *Cpu) u8 {
+        const opcode = self.ram.readByte(self.reg.pair.pc);
+        self.reg.pair.pc += 1;
+
+        return opcode;
+    }
+
+    pub fn fetch16(self: *Cpu) u16 {
+        const low = self.fetch();
+        const high = self.fetch();
+
+        const value: u16 = math.mergeBytes(low, high);
+        return value;
+    }
 };
 
 test {

@@ -57,6 +57,10 @@ pub inline fn checkBorrowSub(comptime T: type, a: T, b: T) struct {
     };
 }
 
+pub inline fn mergeBytes(low: u8, high: u8) u16 {
+    return @as(u16, low) | (@as(u16, high) << 8);
+}
+
 test "checkCarryAdd - basic addition without carry" {
     const std = @import("std");
 

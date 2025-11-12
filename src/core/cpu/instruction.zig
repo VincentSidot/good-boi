@@ -70,6 +70,19 @@ inline fn setMemory(cpu: *Cpu, reg: Register16Memory, value: u8) void {
     cpu.ram.writeByte(address, value);
 }
 
+const RegisterMemoryOperation = enum {
+    inc,
+    dec,
+};
+
+const R8 = Register8;
+const R16 = Register16;
+const RM = Register16Memory;
+const RMO = struct {
+    reg: Register16Memory,
+    op: RegisterMemoryOperation,
+};
+
 const op = struct {
     fn nop_00(cpu: *Cpu) void {
         utils.log.debug("NOP executed", .{});
@@ -80,11 +93,11 @@ const op = struct {
         const T = @TypeOf(reg);
 
         const targetInt, const handleFlags, const getFn, const setFn, const cycles = comptime blk: {
-            if (T == Register8) {
+            if (T == R8) {
                 break :blk .{ u8, true, getReg8, setReg8, 1 };
-            } else if (T == Register16) {
+            } else if (T == R16) {
                 break :blk .{ u16, false, getReg16, setReg16, 2 };
-            } else if (T == Register16Memory) {
+            } else if (T == RM) {
                 break :blk .{ u8, true, getMemory, setMemory, 3 };
             } else {
                 @compileError("reg must be of type Register8 or Register16");
@@ -122,11 +135,11 @@ const op = struct {
         const T = @TypeOf(reg);
 
         const targetInt, const handleFlags, const getFn, const setFn, const cycles = comptime blk: {
-            if (T == Register8) {
+            if (T == R8) {
                 break :blk .{ u8, true, getReg8, setReg8, 1 };
-            } else if (T == Register16) {
+            } else if (T == R16) {
                 break :blk .{ u16, false, getReg16, setReg16, 2 };
-            } else if (T == Register16Memory) {
+            } else if (T == RM) {
                 break :blk .{ u8, true, getMemory, setMemory, 3 };
             } else {
                 @compileError("reg must be of type Register8 or Register16");
@@ -159,6 +172,52 @@ const op = struct {
             .name = std.fmt.comptimePrint("DEC {s}", .{register.asText(reg)}),
         } };
     }
+
+    fn load(comptime source: anytype, comptime dest: anytype) Instruction {
+        const TS = @TypeOf(source);
+        const TD = @TypeOf(dest);
+
+        const getSrc, const cycleSrc = comptime blkS: {
+            switch (TS) {
+                Register8 => break :blkS .{ getReg8, 1 },
+                Register16 => break :blkS .{ getReg16, 1 },
+                Register16Memory => break :blkS .{ getMemory, 2 },
+                else => @compileError("source must be of type Register8, Register16, or Register16Memory"),
+            }
+        };
+
+        const setDst, const cycleDst = comptime blkD: {
+            switch (TD) {
+                Register8 => break :blkD .{ setReg8, 1 },
+                Register16 => break :blkD .{ setReg16, 1 },
+                Register16Memory => break :blkD .{ setMemory, 2 },
+                else => @compileError("dest must be of type Register8, Register16, or Register16Memory"),
+            }
+        };
+
+        const cycle = cycleSrc * cycleDst; // Tiny hack because cycles are 1 or 2.
+
+        const _inline = struct {
+            fn execute(cpu: *Cpu) void {
+                const value = getSrc(cpu, source);
+                setDst(cpu, dest, value);
+
+                // Flags ----
+
+            }
+        };
+
+        return .{
+            .execute = _inline.execute,
+            .metadata = .{
+                .cycles = cycle,
+                .name = std.fmt.comptimePrint(
+                    "LD {s}, {s}",
+                    .{ register.asText(dest), register.asText(source) },
+                ),
+            },
+        };
+    }
 };
 
 const _NOP_00: Instruction = .{
@@ -169,35 +228,115 @@ const _NOP_00: Instruction = .{
     },
 };
 
-const _INC_03: Instruction = op.inc(Register16.bc);
-const _INC_13: Instruction = op.inc(Register16.de);
-const _INC_23: Instruction = op.inc(Register16.hl);
-const _INC_33: Instruction = op.inc(Register16.sp);
+const _INC_03: Instruction = op.inc(R16.bc);
+const _INC_13: Instruction = op.inc(R16.de);
+const _INC_23: Instruction = op.inc(R16.hl);
+const _INC_33: Instruction = op.inc(R16.sp);
 
-const _INC_04: Instruction = op.inc(Register8.b);
-const _INC_14: Instruction = op.inc(Register8.d);
-const _INC_24: Instruction = op.inc(Register8.h);
-const _INC_34: Instruction = op.inc(Register16Memory.hl_indirect);
+const _INC_04: Instruction = op.inc(R8.b);
+const _INC_14: Instruction = op.inc(R8.d);
+const _INC_24: Instruction = op.inc(R8.h);
+const _INC_34: Instruction = op.inc(RM.hl);
 
-const _DEC_05: Instruction = op.dec(Register8.b);
-const _DEC_15: Instruction = op.dec(Register8.d);
-const _DEC_25: Instruction = op.dec(Register8.h);
-const _DEC_35: Instruction = op.dec(Register16Memory.hl_indirect);
+const _DEC_05: Instruction = op.dec(R8.b);
+const _DEC_15: Instruction = op.dec(R8.d);
+const _DEC_25: Instruction = op.dec(R8.h);
+const _DEC_35: Instruction = op.dec(RM.hl);
 
-const _DEC_0B: Instruction = op.dec(Register16.bc);
-const _DEC_1B: Instruction = op.dec(Register16.de);
-const _DEC_2B: Instruction = op.dec(Register16.hl);
-const _DEC_3B: Instruction = op.dec(Register16.sp);
+const _DEC_0B: Instruction = op.dec(R16.bc);
+const _DEC_1B: Instruction = op.dec(R16.de);
+const _DEC_2B: Instruction = op.dec(R16.hl);
+const _DEC_3B: Instruction = op.dec(R16.sp);
 
-const _INC_0C: Instruction = op.inc(Register8.c);
-const _INC_1C: Instruction = op.inc(Register8.e);
-const _INC_2C: Instruction = op.inc(Register8.l);
-const _INC_3C: Instruction = op.inc(Register8.a);
+const _INC_0C: Instruction = op.inc(R8.c);
+const _INC_1C: Instruction = op.inc(R8.e);
+const _INC_2C: Instruction = op.inc(R8.l);
+const _INC_3C: Instruction = op.inc(R8.a);
 
-const _DEC_0D: Instruction = op.dec(Register8.c);
-const _DEC_1D: Instruction = op.dec(Register8.e);
-const _DEC_2D: Instruction = op.dec(Register8.l);
-const _DEC_3D: Instruction = op.dec(Register8.a);
+const _DEC_0D: Instruction = op.dec(R8.c);
+const _DEC_1D: Instruction = op.dec(R8.e);
+const _DEC_2D: Instruction = op.dec(R8.l);
+const _DEC_3D: Instruction = op.dec(R8.a);
+
+const _LD_40_: Instruction = op.load(R8.b, R8.b);
+const _LD_50_: Instruction = op.load(R8.d, R8.b);
+const _LD_60_: Instruction = op.load(R8.h, R8.b);
+const _LD_70_: Instruction = op.load(RM.hl, R8.b);
+
+const _LD_41_: Instruction = op.load(R8.b, R8.c);
+const _LD_51_: Instruction = op.load(R8.d, R8.c);
+const _LD_61_: Instruction = op.load(R8.h, R8.c);
+const _LD_71_: Instruction = op.load(RM.hl, R8.c);
+
+const _LD_42_: Instruction = op.load(R8.b, R8.d);
+const _LD_52_: Instruction = op.load(R8.d, R8.d);
+const _LD_62_: Instruction = op.load(R8.h, R8.d);
+const _LD_72_: Instruction = op.load(RM.hl, R8.d);
+
+const _LD_43_: Instruction = op.load(R8.b, R8.e);
+const _LD_53_: Instruction = op.load(R8.d, R8.e);
+const _LD_63_: Instruction = op.load(R8.h, R8.e);
+const _LD_73_: Instruction = op.load(RM.hl, R8.e);
+
+const _LD_44_: Instruction = op.load(R8.b, R8.h);
+const _LD_54_: Instruction = op.load(R8.d, R8.h);
+const _LD_64_: Instruction = op.load(R8.h, R8.h);
+const _LD_74_: Instruction = op.load(RM.hl, R8.h);
+
+const _LD_45_: Instruction = op.load(R8.b, R8.l);
+const _LD_55_: Instruction = op.load(R8.d, R8.l);
+const _LD_65_: Instruction = op.load(R8.h, R8.l);
+const _LD_75_: Instruction = op.load(RM.hl, R8.l);
+
+const _LD_46_: Instruction = op.load(R8.b, RM.hl);
+const _LD_56_: Instruction = op.load(R8.d, RM.hl);
+const _LD_66_: Instruction = op.load(R8.h, RM.hl);
+// const _LD_76_: Instruction = op.halt; // HALT instruction
+
+const _LD_47_: Instruction = op.load(R8.b, R8.a);
+const _LD_57_: Instruction = op.load(R8.d, R8.a);
+const _LD_67_: Instruction = op.load(R8.h, R8.a);
+const _LD_77_: Instruction = op.load(RM.hl, R8.a);
+
+const _LD_48_: Instruction = op.load(R8.c, R8.b);
+const _LD_58_: Instruction = op.load(R8.e, R8.b);
+const _LD_68_: Instruction = op.load(R8.l, R8.b);
+const _LD_78_: Instruction = op.load(R8.a, R8.b);
+
+const _LD_49_: Instruction = op.load(R8.c, R8.c);
+const _LD_59_: Instruction = op.load(R8.e, R8.c);
+const _LD_69_: Instruction = op.load(R8.l, R8.c);
+const _LD_79_: Instruction = op.load(R8.a, R8.c);
+
+const _LD_4A_: Instruction = op.load(R8.c, R8.d);
+const _LD_5A_: Instruction = op.load(R8.e, R8.d);
+const _LD_6A_: Instruction = op.load(R8.l, R8.d);
+const _LD_7A_: Instruction = op.load(R8.a, R8.d);
+
+const _LD_4B_: Instruction = op.load(R8.c, R8.e);
+const _LD_5B_: Instruction = op.load(R8.e, R8.e);
+const _LD_6B_: Instruction = op.load(R8.l, R8.e);
+const _LD_7B_: Instruction = op.load(R8.a, R8.e);
+
+const _LD_4C_: Instruction = op.load(R8.c, R8.h);
+const _LD_5C_: Instruction = op.load(R8.e, R8.h);
+const _LD_6C_: Instruction = op.load(R8.l, R8.h);
+const _LD_7C_: Instruction = op.load(R8.a, R8.h);
+
+const _LD_4D_: Instruction = op.load(R8.c, R8.l);
+const _LD_5D_: Instruction = op.load(R8.e, R8.l);
+const _LD_6D_: Instruction = op.load(R8.l, R8.l);
+const _LD_7D_: Instruction = op.load(R8.a, R8.l);
+
+const _LD_4E_: Instruction = op.load(R8.c, RM.hl);
+const _LD_5E_: Instruction = op.load(R8.e, RM.hl);
+const _LD_6E_: Instruction = op.load(R8.l, RM.hl);
+const _LD_7E_: Instruction = op.load(R8.a, RM.hl);
+
+const _LD_4F_: Instruction = op.load(R8.c, R8.a);
+const _LD_5F_: Instruction = op.load(R8.e, R8.a);
+const _LD_6F_: Instruction = op.load(R8.l, R8.a);
+const _LD_7F_: Instruction = op.load(R8.a, R8.a);
 
 const U = Unimplemented;
 const OPCODES: [256]Instruction = .{
@@ -206,10 +345,10 @@ const OPCODES: [256]Instruction = .{
     U(0x10), U(0x11), U(0x12), _INC_13, _INC_14, _DEC_15, U(0x16), U(0x17), U(0x18), U(0x19), U(0x1A), _DEC_1B, _INC_1C, _DEC_1D, U(0x1E), U(0x1F), // 0x10
     U(0x20), U(0x21), U(0x22), _INC_23, _INC_24, _DEC_25, U(0x26), U(0x27), U(0x28), U(0x29), U(0x2A), _DEC_2B, _INC_2C, _DEC_2D, U(0x2E), U(0x2F), // 0x20
     U(0x30), U(0x31), U(0x32), _INC_33, _INC_34, _DEC_35, U(0x36), U(0x37), U(0x38), U(0x39), U(0x3A), _DEC_3B, _INC_3C, _DEC_3D, U(0x3E), U(0x3F), // 0x30
-    U(0x40), U(0x41), U(0x42), U(0x43), U(0x44), U(0x45), U(0x46), U(0x47), U(0x48), U(0x49), U(0x4A), U(0x4B), U(0x4C), U(0x4D), U(0x4E), U(0x4F), // 0x40
-    U(0x50), U(0x51), U(0x52), U(0x53), U(0x54), U(0x55), U(0x56), U(0x57), U(0x58), U(0x59), U(0x5A), U(0x5B), U(0x5C), U(0x5D), U(0x5E), U(0x5F), // 0x50
-    U(0x60), U(0x61), U(0x62), U(0x63), U(0x64), U(0x65), U(0x66), U(0x67), U(0x68), U(0x69), U(0x6A), U(0x6B), U(0x6C), U(0x6D), U(0x6E), U(0x6F), // 0x60
-    U(0x70), U(0x71), U(0x72), U(0x73), U(0x74), U(0x75), U(0x76), U(0x77), U(0x78), U(0x79), U(0x7A), U(0x7B), U(0x7C), U(0x7D), U(0x7E), U(0x7F), // 0x70
+    _LD_40_, _LD_41_, _LD_42_, _LD_43_, _LD_44_, _LD_45_, _LD_46_, _LD_47_, _LD_48_, _LD_49_, _LD_4A_, _LD_4B_, _LD_4C_, _LD_4D_, _LD_4E_, _LD_4F_, // 0x40
+    _LD_50_, _LD_51_, _LD_52_, _LD_53_, _LD_54_, _LD_55_, _LD_56_, _LD_57_, _LD_58_, _LD_59_, _LD_5A_, _LD_5B_, _LD_5C_, _LD_5D_, _LD_5E_, _LD_5F_, // 0x50
+    _LD_60_, _LD_61_, _LD_62_, _LD_63_, _LD_64_, _LD_65_, _LD_66_, _LD_67_, _LD_68_, _LD_69_, _LD_6A_, _LD_6B_, _LD_6C_, _LD_6D_, _LD_6E_, _LD_6F_, // 0x60
+    _LD_70_, _LD_71_, _LD_72_, _LD_73_, _LD_74_, _LD_75_, U(0x76), _LD_77_, _LD_78_, _LD_79_, _LD_7A_, _LD_7B_, _LD_7C_, _LD_7D_, _LD_7E_, _LD_7F_, // 0x70
     U(0x80), U(0x81), U(0x82), U(0x83), U(0x84), U(0x85), U(0x86), U(0x87), U(0x88), U(0x89), U(0x8A), U(0x8B), U(0x8C), U(0x8D), U(0x8E), U(0x8F), // 0x80
     U(0x90), U(0x91), U(0x92), U(0x93), U(0x94), U(0x95), U(0x96), U(0x97), U(0x98), U(0x99), U(0x9A), U(0x9B), U(0x9C), U(0x9D), U(0x9E), U(0x9F), // 0x90
     U(0xA0), U(0xA1), U(0xA2), U(0xA3), U(0xA4), U(0xA5), U(0xA6), U(0xA7), U(0xA8), U(0xA9), U(0xAA), U(0xAB), U(0xAC), U(0xAD), U(0xAE), U(0xAF), // 0xA0
