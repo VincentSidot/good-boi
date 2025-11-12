@@ -1,4 +1,5 @@
 const builtin = @import("builtin");
+const std = @import("std");
 
 comptime {
     // Sanity: Flags must be exactly one byte
@@ -43,6 +44,7 @@ const Pairs = packed struct {
     pc: u16 = 0,
 };
 
+/// 16-bit registers
 pub const Register16 = enum(usize) {
     af = 0,
     bc = 1,
@@ -50,6 +52,17 @@ pub const Register16 = enum(usize) {
     hl = 3,
     sp = 4,
     pc = 5,
+};
+
+/// 16-bit registers that can be used to access memory indirectly
+pub const Register16Memory = enum(usize) {
+    hl_indirect = @intFromEnum(Register16.hl),
+
+    pub fn asReg16(self: Register16Memory) Register16 {
+        const value = @intFromEnum(self);
+        const reg: Register16 = @enumFromInt(value);
+        return reg;
+    }
 };
 
 const SingleLE = packed struct {
@@ -65,16 +78,19 @@ const SingleLE = packed struct {
     l: u8 = 0,
     h: u8 = 0,
 
-    __unused: u32 = 0, // PC and SP are not part of 8-bit registers
+    __unused: std.meta.Int(.unsigned, 16 * 2) = 0, // PC and SP are not part of 8-bit registers
 };
 
 pub const Register8Le = enum(usize) {
     f = 0,
     a = 1,
+
     c = 2,
     b = 3,
+
     e = 4,
     d = 5,
+
     l = 6,
     h = 7,
 };
@@ -98,17 +114,54 @@ const SingleBE = packed struct {
 pub const Register8Be = enum(usize) {
     a = 0,
     f = 1,
+
     b = 2,
     c = 3,
+
     d = 4,
     e = 5,
+
     h = 6,
     l = 7,
 };
 
+pub fn asText(comptime reg: anytype) []const u8 {
+    comptime {
+        const regType = @TypeOf(reg);
+
+        if (regType == Register8) {
+            switch (reg) {
+                .a => return "A",
+                .b => return "B",
+                .c => return "C",
+                .d => return "D",
+                .e => return "E",
+                .f => return "F",
+                .h => return "H",
+                .l => return "L",
+            }
+        } else if (regType == Register16) {
+            switch (reg) {
+                .af => return "AF",
+                .bc => return "BC",
+                .de => return "DE",
+                .hl => return "HL",
+                .sp => return "SP",
+                .pc => return "PC",
+            }
+        } else if (regType == Register16Memory) {
+            switch (reg) {
+                .hl_indirect => return "(HL)",
+            }
+        } else {
+            @compileError("Unsupported register type");
+        }
+    }
+}
+
 // Select the correct endianess for the Single representation
 const Single = if (builtin.target.cpu.arch.endian() == .little) SingleLE else SingleBE;
-const Register8 = if (builtin.target.cpu.arch.endian() == .little) Register8Le else Register8Be;
+pub const Register8 = if (builtin.target.cpu.arch.endian() == .little) Register8Le else Register8Be;
 
 comptime {
     // Sanity: Ensure Single and Pairs have the same size
@@ -130,13 +183,18 @@ pub const Registers = packed union {
         return Registers{ .pair = .{} };
     }
 
-    const _rawSingle = *[@bitSizeOf(Registers) / @bitSizeOf(u8)]u8;
-    inline fn asRawSingle(self: *Registers) _rawSingle {
-        return @as(_rawSingle, @ptrCast(self));
+    const _rawSingle = [@bitSizeOf(Registers) / @bitSizeOf(u8)]u8;
+
+    inline fn asRawSingle(self: *Registers) *_rawSingle {
+        return @as(*_rawSingle, @ptrCast(self));
     }
 
-    pub inline fn get8(self: *Registers, reg: Register8) u8 {
-        const raw = self.asRawSingle();
+    inline fn asRawSingleConst(self: *const Registers) *const _rawSingle {
+        return @as(*const _rawSingle, @ptrCast(self));
+    }
+
+    pub inline fn get8(self: *const Registers, reg: Register8) u8 {
+        const raw = self.asRawSingleConst();
         return raw[@intFromEnum(reg)];
     }
 
@@ -145,13 +203,16 @@ pub const Registers = packed union {
         raw[@intFromEnum(reg)] = value;
     }
 
-    const _rawPairs = *[@bitSizeOf(Registers) / @bitSizeOf(u16)]u16;
-    inline fn asRawPairs(self: *Registers) _rawPairs {
-        return @as(_rawPairs, @ptrCast(self));
+    const _rawPairs = [@bitSizeOf(Registers) / @bitSizeOf(u16)]u16;
+    inline fn asRawPairs(self: *Registers) *_rawPairs {
+        return @as(*_rawPairs, @ptrCast(self));
+    }
+    inline fn asRawPairsConst(self: *const Registers) *const _rawPairs {
+        return @as(*const _rawPairs, @ptrCast(self));
     }
 
-    pub inline fn get16(self: *Registers, reg: Register16) u16 {
-        const raw = self.asRawPairs();
+    pub inline fn get16(self: *const Registers, reg: Register16) u16 {
+        const raw = self.asRawPairsConst();
         return raw[@intFromEnum(reg)];
     }
 
@@ -172,8 +233,6 @@ fn getBC(reg: *const Registers) u16 {
 }
 
 test "endianess" {
-    const std = @import("std");
-
     var reg: Registers = .{ .single = .{
         .b = 0x12,
         .c = 0x34,
@@ -183,10 +242,9 @@ test "endianess" {
 }
 
 test "regsiter" {
-    const std = @import("std");
     var reg: Registers = .{ .pair = .{ .af = 0xAEB0 } };
 
-    std.debug.print("Reg: {any}\n", .{reg});
+    // std.debug.print("Reg: {any}\n", .{reg});
 
     try std.testing.expect(reg.single.a == 0xAE);
 
@@ -205,7 +263,7 @@ test "regsiter" {
     reg2.pair.de = 0xCAFE;
     reg2.pair.hl = 0xBABE;
 
-    std.debug.print("Reg2: {any}\n", .{reg2});
+    // std.debug.print("Reg2: {any}\n", .{reg2});
 
     try std.testing.expect(reg2.single.a == 0xDE);
     try std.testing.expect(reg2.single.f.z == true);
@@ -224,8 +282,6 @@ test "regsiter" {
 }
 
 test "raw access" {
-    const std = @import("std");
-
     var reg = Registers.zeroed();
 
     reg.set8(Register8.a, 0x12);
