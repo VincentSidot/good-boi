@@ -52,9 +52,20 @@ inline fn getReg16(cpu: *const Cpu, reg: Register16) u16 {
     return cpu.reg.get16(reg);
 }
 
-inline fn getMemory(cpu: *const Cpu, reg: Register16Memory) u8 {
-    const address = cpu.reg.get16(reg.asReg16());
-    return cpu.ram.readByte(address);
+fn getMemory(comptime postOp: fn (u16) callconv(.@"inline") u16) fn (*Cpu, Register16Memory) callconv(.@"inline") u8 {
+    const _inner = struct {
+        inline fn execute(cpu: *const Cpu, reg: Register16Memory) u8 {
+            const address = cpu.reg.get16(reg.asReg16());
+            defer {
+                const new_address = postOp(address);
+                cpu.reg.set16(reg.asReg16(), new_address);
+            }
+
+            return cpu.ram.readByte(address);
+        }
+    };
+
+    return _inner.execute;
 }
 
 inline fn setReg8(cpu: *Cpu, reg: Register8, value: u8) void {
@@ -65,14 +76,59 @@ inline fn setReg16(cpu: *Cpu, reg: Register16, value: u16) void {
     cpu.reg.set16(reg, value);
 }
 
-inline fn setMemory(cpu: *Cpu, reg: Register16Memory, value: u8) void {
-    const address = cpu.reg.get16(reg.asReg16());
-    cpu.ram.writeByte(address, value);
+fn setMemory(comptime postOp: fn (u16) callconv(.@"inline") u16) fn (*Cpu, Register16Memory, u8) callconv(.@"inline") void {
+    const _inner = struct {
+        inline fn execute(cpu: *Cpu, reg: Register16Memory, value: u8) void {
+            const address = cpu.reg.get16(reg.asReg16());
+            defer {
+                const new_address = postOp(address);
+                cpu.reg.set16(reg.asReg16(), new_address);
+            }
+            cpu.ram.writeByte(address, value);
+        }
+    };
+
+    return _inner.execute;
 }
 
 const RegisterMemoryOperation = enum {
     inc,
     dec,
+
+    inline fn asPostOp(self: RegisterMemoryOperation) fn (value: u16) callconv(.@"inline") u16 {
+        switch (self) {
+            .inc => return _inc,
+            .dec => return _dec,
+        }
+    }
+
+    fn asText(self: RegisterMemoryOperation, reg: RM) []const u8 {
+        const op_char = comptime blk: {
+            switch (self) {
+                .inc => break :blk "+",
+                .dec => break :blk "-",
+            }
+        };
+        comptime {
+            const reg16 = reg.asReg16();
+            return std.fmt.comptimePrint("({s}{s})", .{
+                reg16.asText(),
+                op_char,
+            });
+        }
+    }
+
+    inline fn _inc(value: u16) u16 {
+        return value + 1;
+    }
+
+    inline fn _dec(value: u16) u16 {
+        return value - 1;
+    }
+
+    inline fn _nop(value: u16) u16 {
+        return value;
+    }
 };
 
 const R8 = Register8;
@@ -81,7 +137,35 @@ const RM = Register16Memory;
 const RMO = struct {
     reg: Register16Memory,
     op: RegisterMemoryOperation,
+
+    const hl_inc = RMO{
+        .reg = RM.hl,
+        .op = .inc,
+    };
+
+    const hl_dec = RMO{
+        .reg = RM.hl,
+        .op = .dec,
+    };
 };
+
+fn regAsText(reg: anytype) []const u8 {
+    comptime {
+        const regType = @TypeOf(reg);
+
+        switch (regType) {
+            R8 or R16 or RM => {
+                return reg.asText();
+            },
+            RMO => {
+                return reg.op.asText(reg.reg);
+            },
+            else => {
+                @compileError("Unsupported register type");
+            },
+        }
+    }
+}
 
 const op = struct {
     fn nop_00(cpu: *Cpu) void {
@@ -98,7 +182,7 @@ const op = struct {
             } else if (T == R16) {
                 break :blk .{ u16, false, getReg16, setReg16, 2 };
             } else if (T == RM) {
-                break :blk .{ u8, true, getMemory, setMemory, 3 };
+                break :blk .{ u8, true, getMemory(RegisterMemoryOperation._nop), setMemory(RegisterMemoryOperation._nop), 3 };
             } else {
                 @compileError("reg must be of type Register8 or Register16");
             }
@@ -140,7 +224,7 @@ const op = struct {
             } else if (T == R16) {
                 break :blk .{ u16, false, getReg16, setReg16, 2 };
             } else if (T == RM) {
-                break :blk .{ u8, true, getMemory, setMemory, 3 };
+                break :blk .{ u8, true, getMemory(RegisterMemoryOperation._nop), setMemory(RegisterMemoryOperation._nop), 3 };
             } else {
                 @compileError("reg must be of type Register8 or Register16");
             }
@@ -173,34 +257,38 @@ const op = struct {
         } };
     }
 
-    fn load(comptime source: anytype, comptime dest: anytype) Instruction {
+    fn load(comptime dest: anytype, comptime source: anytype) Instruction {
         const TS = @TypeOf(source);
         const TD = @TypeOf(dest);
 
-        const getSrc, const cycleSrc = comptime blkS: {
+        const getSrc, const sourceReg, const cycleSrc = comptime blkS: {
             switch (TS) {
-                Register8 => break :blkS .{ getReg8, 1 },
-                Register16 => break :blkS .{ getReg16, 1 },
-                Register16Memory => break :blkS .{ getMemory, 2 },
-                else => @compileError("source must be of type Register8, Register16, or Register16Memory"),
+                R8 => break :blkS .{ getReg8, source, 1 },
+                R16 => break :blkS .{ getReg16, source, 1 },
+                RM => break :blkS .{ getMemory(RegisterMemoryOperation._nop), source, 2 },
+                RMO => break :blkS .{ getMemory(source.op.asPostOp()), source.reg, 2 },
+                else => @compileError("source must be of type R8, R16, RM, or RMO"),
             }
         };
 
-        const setDst, const cycleDst = comptime blkD: {
+        const setDst, const destReg, const cycleDst = comptime blkD: {
             switch (TD) {
-                Register8 => break :blkD .{ setReg8, 1 },
-                Register16 => break :blkD .{ setReg16, 1 },
-                Register16Memory => break :blkD .{ setMemory, 2 },
-                else => @compileError("dest must be of type Register8, Register16, or Register16Memory"),
+                R8 => break :blkD .{ setReg8, dest, 1 },
+                R16 => break :blkD .{ setReg16, dest, 1 },
+                RM => break :blkD .{ setMemory(RegisterMemoryOperation._nop), dest, 2 },
+                RMO => break :blkD .{ setMemory(dest.op.asPostOp()), dest.reg, 2 },
+                else => @compileError("dest must be of type R8, R16, RM, or RMO"),
             }
         };
 
         const cycle = cycleSrc * cycleDst; // Tiny hack because cycles are 1 or 2.
 
+        if (TS == RegisterMemoryOperation) {}
+
         const _inline = struct {
             fn execute(cpu: *Cpu) void {
-                const value = getSrc(cpu, source);
-                setDst(cpu, dest, value);
+                const value = getSrc(cpu, sourceReg);
+                setDst(cpu, destReg, value);
 
                 // Flags ----
 
@@ -213,7 +301,7 @@ const op = struct {
                 .cycles = cycle,
                 .name = std.fmt.comptimePrint(
                     "LD {s}, {s}",
-                    .{ register.asText(dest), register.asText(source) },
+                    .{ register.asText(destReg), register.asText(sourceReg) },
                 ),
             },
         };
@@ -227,6 +315,11 @@ const _NOP_00: Instruction = .{
         .cycles = 1,
     },
 };
+
+const _LD_02_: Instruction = op.load(RM.bc, R8.a);
+const _LD_12_: Instruction = op.load(RM.de, R8.a);
+const _LD_22_: Instruction = op.load(RMO.hl_inc, R8.a);
+const _LD_32_: Instruction = op.load(RMO.hl_dec, R8.a);
 
 const _INC_03: Instruction = op.inc(R16.bc);
 const _INC_13: Instruction = op.inc(R16.de);
@@ -242,6 +335,11 @@ const _DEC_05: Instruction = op.dec(R8.b);
 const _DEC_15: Instruction = op.dec(R8.d);
 const _DEC_25: Instruction = op.dec(R8.h);
 const _DEC_35: Instruction = op.dec(RM.hl);
+
+const _LD_0A_: Instruction = op.load(R8.a, RM.bc);
+const _LD_1A_: Instruction = op.load(R8.a, RM.de);
+const _LD_2A_: Instruction = op.load(R8.a, RMO.hl_inc);
+const _LD_3A_: Instruction = op.load(R8.a, RMO.hl_dec);
 
 const _DEC_0B: Instruction = op.dec(R16.bc);
 const _DEC_1B: Instruction = op.dec(R16.de);
@@ -341,10 +439,10 @@ const _LD_7F_: Instruction = op.load(R8.a, R8.a);
 const U = Unimplemented;
 const OPCODES: [256]Instruction = .{
     //0x00,  0x01,    0x02,    0x03,    0x04,    0x05,    0x06,    0x07,    0x08,    0x09,    0x0A,    0x0B,    0x0C,    0x0D,    0x0E,    0x0F,
-    _NOP_00, U(0x01), U(0x02), _INC_03, _INC_04, _DEC_05, U(0x06), U(0x07), U(0x08), U(0x09), U(0x0A), _DEC_0B, _INC_0C, _DEC_0D, U(0x0E), U(0x0F), // 0x00
-    U(0x10), U(0x11), U(0x12), _INC_13, _INC_14, _DEC_15, U(0x16), U(0x17), U(0x18), U(0x19), U(0x1A), _DEC_1B, _INC_1C, _DEC_1D, U(0x1E), U(0x1F), // 0x10
-    U(0x20), U(0x21), U(0x22), _INC_23, _INC_24, _DEC_25, U(0x26), U(0x27), U(0x28), U(0x29), U(0x2A), _DEC_2B, _INC_2C, _DEC_2D, U(0x2E), U(0x2F), // 0x20
-    U(0x30), U(0x31), U(0x32), _INC_33, _INC_34, _DEC_35, U(0x36), U(0x37), U(0x38), U(0x39), U(0x3A), _DEC_3B, _INC_3C, _DEC_3D, U(0x3E), U(0x3F), // 0x30
+    _NOP_00, U(0x01), _LD_02_, _INC_03, _INC_04, _DEC_05, U(0x06), U(0x07), U(0x08), U(0x09), _LD_0A_, _DEC_0B, _INC_0C, _DEC_0D, U(0x0E), U(0x0F), // 0x00
+    U(0x10), U(0x11), _LD_12_, _INC_13, _INC_14, _DEC_15, U(0x16), U(0x17), U(0x18), U(0x19), _LD_1A_, _DEC_1B, _INC_1C, _DEC_1D, U(0x1E), U(0x1F), // 0x10
+    U(0x20), U(0x21), _LD_22_, _INC_23, _INC_24, _DEC_25, U(0x26), U(0x27), U(0x28), U(0x29), _LD_2A_, _DEC_2B, _INC_2C, _DEC_2D, U(0x2E), U(0x2F), // 0x20
+    U(0x30), U(0x31), _LD_32_, _INC_33, _INC_34, _DEC_35, U(0x36), U(0x37), U(0x38), U(0x39), _LD_3A_, _DEC_3B, _INC_3C, _DEC_3D, U(0x3E), U(0x3F), // 0x30
     _LD_40_, _LD_41_, _LD_42_, _LD_43_, _LD_44_, _LD_45_, _LD_46_, _LD_47_, _LD_48_, _LD_49_, _LD_4A_, _LD_4B_, _LD_4C_, _LD_4D_, _LD_4E_, _LD_4F_, // 0x40
     _LD_50_, _LD_51_, _LD_52_, _LD_53_, _LD_54_, _LD_55_, _LD_56_, _LD_57_, _LD_58_, _LD_59_, _LD_5A_, _LD_5B_, _LD_5C_, _LD_5D_, _LD_5E_, _LD_5F_, // 0x50
     _LD_60_, _LD_61_, _LD_62_, _LD_63_, _LD_64_, _LD_65_, _LD_66_, _LD_67_, _LD_68_, _LD_69_, _LD_6A_, _LD_6B_, _LD_6C_, _LD_6D_, _LD_6E_, _LD_6F_, // 0x60
@@ -429,4 +527,53 @@ test "opcode INC Memory" {
     try std.testing.expect(cpu.reg.single.f.n == true);
     try std.testing.expect(cpu.reg.single.f.h == false);
     try std.testing.expect(cpu.reg.single.f.c == false);
+}
+
+test "load" {
+    var cpu = Cpu.init();
+
+    cpu.reg.set8(Register8.a, 0x12);
+    cpu.reg.set8(Register8.b, 0x00);
+
+    const op_a_b = OPCODES[0x47]; // LD B, A
+    op_a_b.execute(&cpu);
+
+    try std.testing.expect(cpu.reg.get8(Register8.b) == 0x12);
+
+    const op_b_hl = OPCODES[0x70]; // LD (HL), B
+    const test_addr: u16 = 0x3000;
+    cpu.reg.set16(Register16.hl, test_addr);
+
+    op_b_hl.execute(&cpu);
+
+    try std.testing.expect(cpu.ram.readByte(test_addr) == 0x12);
+
+    const op_hl_a = OPCODES[0x7E]; // LD A, (HL)
+    op_hl_a.execute(&cpu);
+
+    try std.testing.expect(cpu.reg.single.a == 0x12);
+}
+
+test "load inc dec" {
+    var cpu = Cpu.init();
+
+    var test_addr: u16 = 0x4000;
+
+    cpu.ram.writeByte(test_addr, 0x1A);
+    cpu.ram.writeByte(test_addr + 1, 0x1B);
+    cpu.reg.pair.hl = test_addr;
+
+    const op_ld_hl_inc_a = OPCODES[0x2A]; // LD A, (HL+)
+    op_ld_hl_inc_a.execute(&cpu);
+    test_addr += 1;
+
+    try std.testing.expect(cpu.reg.single.a == 0x1A);
+    try std.testing.expect(cpu.reg.get16(Register16.hl) == test_addr);
+
+    const op_ld_hl_dec_a = OPCODES[0x3A]; // LD A, (HL-)
+    op_ld_hl_dec_a.execute(&cpu);
+    test_addr -= 1;
+
+    try std.testing.expect(cpu.reg.single.a == 0x1B);
+    try std.testing.expect(cpu.reg.get16(Register16.hl) == test_addr);
 }
