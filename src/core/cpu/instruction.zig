@@ -78,6 +78,11 @@ inline fn getIm16(cpu: *Cpu, _: IM16) u16 {
     return value;
 }
 
+inline fn getImm16(cpu: *Cpu, _: IMM16) u8 {
+    const addr = cpu.fetch16();
+    return cpu.ram.readByte(addr);
+}
+
 inline fn setReg8(cpu: *Cpu, reg: Register8, value: u8) void {
     cpu.reg.set8(reg, value);
 }
@@ -101,7 +106,12 @@ fn setMemory(comptime postOp: fn (u16) callconv(.@"inline") u16) fn (*Cpu, Regis
     return _inner.execute;
 }
 
-inline fn setIm16(cpu: *Cpu, _: IM16, value: u16) void {
+inline fn setImm8(cpu: *Cpu, _: IM8, value: u8) void {
+    const addr = cpu.fetch16();
+    cpu.ram.writeByte(addr, value);
+}
+
+inline fn setImm16(cpu: *Cpu, _: IM16, value: u16) void {
     const addr = cpu.fetch16();
     const valueSplit = math.splitBytes(value);
 
@@ -174,6 +184,8 @@ const RMO = struct {
 };
 const IM8 = struct {};
 const IM16 = struct {};
+const IMM8 = struct {};
+const IMM16 = struct {};
 
 fn regAsText(reg: anytype) []const u8 {
     comptime {
@@ -191,6 +203,12 @@ fn regAsText(reg: anytype) []const u8 {
             },
             IM16 => {
                 return "d16";
+            },
+            IMM8 => {
+                return "(d8)";
+            },
+            IMM16 => {
+                return "(d16)";
             },
             else => {
                 @compileError("Unsupported register type");
@@ -301,6 +319,7 @@ const op = struct {
                 RMO => break :blkS .{ getMemory(source.op.asPostOp()), source.reg, 2 },
                 IM8 => break :blkS .{ getIm8, source, 2 },
                 IM16 => break :blkS .{ getIm16, source, 3 },
+                IMM16 => break :blkS .{ getImm16, source, 4 },
                 else => @compileError("source must be of type R8, R16, RM, RMO, IM8, or IM16"),
             }
         };
@@ -311,7 +330,7 @@ const op = struct {
                 R16 => break :blkD .{ setReg16, dest, 0 },
                 RM => break :blkD .{ setMemory(RegisterMemoryOperation._nop), dest, 1 },
                 RMO => break :blkD .{ setMemory(dest.op.asPostOp()), dest.reg, 1 },
-                IM16 => break :blkD .{ setIm16, dest, 4 },
+                IMM16 => break :blkD .{ setImm16, dest, 4 },
                 else => @compileError("dest must be of type R8, R16, RM, or RMO"),
             }
         };
@@ -379,7 +398,7 @@ const _LD_16_: Instruction = op.load(R8.d, IM8{});
 const _LD_26_: Instruction = op.load(R8.h, IM8{});
 const _LD_36_: Instruction = op.load(RM.hl, IM8{});
 
-const _LD_08_: Instruction = op.load(IM16{}, R16.sp);
+const _LD_08_: Instruction = op.load(IMM16{}, R16.sp);
 
 const _LD_0A_: Instruction = op.load(R8.a, RM.bc);
 const _LD_1A_: Instruction = op.load(R8.a, RM.de);
@@ -461,6 +480,8 @@ const _LD_5A_: Instruction = op.load(R8.e, R8.d);
 const _LD_6A_: Instruction = op.load(R8.l, R8.d);
 const _LD_7A_: Instruction = op.load(R8.a, R8.d);
 
+const _LD_EA_: Instruction = op.load(IM8{}, R8.a);
+
 const _LD_4B_: Instruction = op.load(R8.c, R8.e);
 const _LD_5B_: Instruction = op.load(R8.e, R8.e);
 const _LD_6B_: Instruction = op.load(R8.l, R8.e);
@@ -487,6 +508,8 @@ const _LD_6F_: Instruction = op.load(R8.l, R8.a);
 const _LD_7F_: Instruction = op.load(R8.a, R8.a);
 
 const U = Unimplemented;
+
+// From https://izik1.github.io/gbops/
 const OPCODES: [256]Instruction = .{
     //0x00,  0x01,    0x02,    0x03,    0x04,    0x05,    0x06,    0x07,    0x08,    0x09,    0x0A,    0x0B,    0x0C,    0x0D,    0x0E,    0x0F,
     _NOP_00, _LD_01_, _LD_02_, _INC_03, _INC_04, _DEC_05, _LD_06_, U(0x07), _LD_08_, U(0x09), _LD_0A_, _DEC_0B, _INC_0C, _DEC_0D, _LD_0E_, U(0x0F), // 0x00
