@@ -68,6 +68,16 @@ fn getMemory(comptime postOp: fn (u16) callconv(.@"inline") u16) fn (*Cpu, Regis
     return _inner.execute;
 }
 
+inline fn getIm8(cpu: *Cpu, _: IM8) u8 {
+    const value = cpu.fetch();
+    return value;
+}
+
+inline fn getIm16(cpu: *Cpu, _: IM16) u16 {
+    const value = cpu.fetch16();
+    return value;
+}
+
 inline fn setReg8(cpu: *Cpu, reg: Register8, value: u8) void {
     cpu.reg.set8(reg, value);
 }
@@ -89,6 +99,20 @@ fn setMemory(comptime postOp: fn (u16) callconv(.@"inline") u16) fn (*Cpu, Regis
     };
 
     return _inner.execute;
+}
+
+inline fn setIm16(cpu: *Cpu, _: IM16, value: u16) void {
+    const addr = cpu.fetch16();
+    const valueSplit = math.splitBytes(value);
+
+    cpu.ram.writeByte(
+        addr,
+        valueSplit.low,
+    );
+    cpu.ram.writeByte(
+        addr + 1,
+        valueSplit.high,
+    );
 }
 
 const RegisterMemoryOperation = enum {
@@ -148,17 +172,25 @@ const RMO = struct {
         .op = .dec,
     };
 };
+const IM8 = struct {};
+const IM16 = struct {};
 
 fn regAsText(reg: anytype) []const u8 {
     comptime {
         const regType = @TypeOf(reg);
 
         switch (regType) {
-            R8 or R16 or RM => {
-                return reg.asText();
+            R8, R16, RM => {
+                return register.asText(reg);
             },
             RMO => {
                 return reg.op.asText(reg.reg);
+            },
+            IM8 => {
+                return "d8";
+            },
+            IM16 => {
+                return "d16";
             },
             else => {
                 @compileError("Unsupported register type");
@@ -211,7 +243,7 @@ const op = struct {
 
         return .{ .execute = _inline.execute, .metadata = .{
             .cycles = cycles,
-            .name = std.fmt.comptimePrint("INC {s}", .{register.asText(reg)}),
+            .name = std.fmt.comptimePrint("INC {s}", .{regAsText(reg)}),
         } };
     }
 
@@ -253,7 +285,7 @@ const op = struct {
 
         return .{ .execute = _inline.execute, .metadata = .{
             .cycles = cycles,
-            .name = std.fmt.comptimePrint("DEC {s}", .{register.asText(reg)}),
+            .name = std.fmt.comptimePrint("DEC {s}", .{regAsText(reg)}),
         } };
     }
 
@@ -267,21 +299,24 @@ const op = struct {
                 R16 => break :blkS .{ getReg16, source, 1 },
                 RM => break :blkS .{ getMemory(RegisterMemoryOperation._nop), source, 2 },
                 RMO => break :blkS .{ getMemory(source.op.asPostOp()), source.reg, 2 },
-                else => @compileError("source must be of type R8, R16, RM, or RMO"),
+                IM8 => break :blkS .{ getIm8, source, 2 },
+                IM16 => break :blkS .{ getIm16, source, 3 },
+                else => @compileError("source must be of type R8, R16, RM, RMO, IM8, or IM16"),
             }
         };
 
         const setDst, const destReg, const cycleDst = comptime blkD: {
             switch (TD) {
-                R8 => break :blkD .{ setReg8, dest, 1 },
-                R16 => break :blkD .{ setReg16, dest, 1 },
-                RM => break :blkD .{ setMemory(RegisterMemoryOperation._nop), dest, 2 },
-                RMO => break :blkD .{ setMemory(dest.op.asPostOp()), dest.reg, 2 },
+                R8 => break :blkD .{ setReg8, dest, 0 },
+                R16 => break :blkD .{ setReg16, dest, 0 },
+                RM => break :blkD .{ setMemory(RegisterMemoryOperation._nop), dest, 1 },
+                RMO => break :blkD .{ setMemory(dest.op.asPostOp()), dest.reg, 1 },
+                IM16 => break :blkD .{ setIm16, dest, 4 },
                 else => @compileError("dest must be of type R8, R16, RM, or RMO"),
             }
         };
 
-        const cycle = cycleSrc * cycleDst; // Tiny hack because cycles are 1 or 2.
+        const cycle = cycleSrc + cycleDst; // Tiny hack because cycles are 1 or 2.
 
         const _inline = struct {
             fn execute(cpu: *Cpu) void {
@@ -299,7 +334,7 @@ const op = struct {
                 .cycles = cycle,
                 .name = std.fmt.comptimePrint(
                     "LD {s}, {s}",
-                    .{ register.asText(destReg), register.asText(sourceReg) },
+                    .{ regAsText(destReg), regAsText(sourceReg) },
                 ),
             },
         };
@@ -313,6 +348,11 @@ const _NOP_00: Instruction = .{
         .cycles = 1,
     },
 };
+
+const _LD_01_: Instruction = op.load(R16.bc, IM16{});
+const _LD_11_: Instruction = op.load(R16.de, IM16{});
+const _LD_21_: Instruction = op.load(R16.hl, IM16{});
+const _LD_31_: Instruction = op.load(R16.sp, IM16{});
 
 const _LD_02_: Instruction = op.load(RM.bc, R8.a);
 const _LD_12_: Instruction = op.load(RM.de, R8.a);
@@ -334,6 +374,13 @@ const _DEC_15: Instruction = op.dec(R8.d);
 const _DEC_25: Instruction = op.dec(R8.h);
 const _DEC_35: Instruction = op.dec(RM.hl);
 
+const _LD_06_: Instruction = op.load(R8.b, IM8{});
+const _LD_16_: Instruction = op.load(R8.d, IM8{});
+const _LD_26_: Instruction = op.load(R8.h, IM8{});
+const _LD_36_: Instruction = op.load(RM.hl, IM8{});
+
+const _LD_08_: Instruction = op.load(IM16{}, R16.sp);
+
 const _LD_0A_: Instruction = op.load(R8.a, RM.bc);
 const _LD_1A_: Instruction = op.load(R8.a, RM.de);
 const _LD_2A_: Instruction = op.load(R8.a, RMO.hl_inc);
@@ -353,6 +400,11 @@ const _DEC_0D: Instruction = op.dec(R8.c);
 const _DEC_1D: Instruction = op.dec(R8.e);
 const _DEC_2D: Instruction = op.dec(R8.l);
 const _DEC_3D: Instruction = op.dec(R8.a);
+
+const _LD_0E_: Instruction = op.load(R8.c, IM8{});
+const _LD_1E_: Instruction = op.load(R8.e, IM8{});
+const _LD_2E_: Instruction = op.load(R8.l, IM8{});
+const _LD_3E_: Instruction = op.load(R8.a, IM8{});
 
 const _LD_40_: Instruction = op.load(R8.b, R8.b);
 const _LD_50_: Instruction = op.load(R8.d, R8.b);
@@ -437,10 +489,10 @@ const _LD_7F_: Instruction = op.load(R8.a, R8.a);
 const U = Unimplemented;
 const OPCODES: [256]Instruction = .{
     //0x00,  0x01,    0x02,    0x03,    0x04,    0x05,    0x06,    0x07,    0x08,    0x09,    0x0A,    0x0B,    0x0C,    0x0D,    0x0E,    0x0F,
-    _NOP_00, U(0x01), _LD_02_, _INC_03, _INC_04, _DEC_05, U(0x06), U(0x07), U(0x08), U(0x09), _LD_0A_, _DEC_0B, _INC_0C, _DEC_0D, U(0x0E), U(0x0F), // 0x00
-    U(0x10), U(0x11), _LD_12_, _INC_13, _INC_14, _DEC_15, U(0x16), U(0x17), U(0x18), U(0x19), _LD_1A_, _DEC_1B, _INC_1C, _DEC_1D, U(0x1E), U(0x1F), // 0x10
-    U(0x20), U(0x21), _LD_22_, _INC_23, _INC_24, _DEC_25, U(0x26), U(0x27), U(0x28), U(0x29), _LD_2A_, _DEC_2B, _INC_2C, _DEC_2D, U(0x2E), U(0x2F), // 0x20
-    U(0x30), U(0x31), _LD_32_, _INC_33, _INC_34, _DEC_35, U(0x36), U(0x37), U(0x38), U(0x39), _LD_3A_, _DEC_3B, _INC_3C, _DEC_3D, U(0x3E), U(0x3F), // 0x30
+    _NOP_00, _LD_01_, _LD_02_, _INC_03, _INC_04, _DEC_05, _LD_06_, U(0x07), _LD_08_, U(0x09), _LD_0A_, _DEC_0B, _INC_0C, _DEC_0D, _LD_0E_, U(0x0F), // 0x00
+    U(0x10), _LD_11_, _LD_12_, _INC_13, _INC_14, _DEC_15, _LD_16_, U(0x17), U(0x18), U(0x19), _LD_1A_, _DEC_1B, _INC_1C, _DEC_1D, _LD_1E_, U(0x1F), // 0x10
+    U(0x20), _LD_21_, _LD_22_, _INC_23, _INC_24, _DEC_25, _LD_26_, U(0x27), U(0x28), U(0x29), _LD_2A_, _DEC_2B, _INC_2C, _DEC_2D, _LD_2E_, U(0x2F), // 0x20
+    U(0x30), _LD_31_, _LD_32_, _INC_33, _INC_34, _DEC_35, _LD_36_, U(0x37), U(0x38), U(0x39), _LD_3A_, _DEC_3B, _INC_3C, _DEC_3D, _LD_3E_, U(0x3F), // 0x30
     _LD_40_, _LD_41_, _LD_42_, _LD_43_, _LD_44_, _LD_45_, _LD_46_, _LD_47_, _LD_48_, _LD_49_, _LD_4A_, _LD_4B_, _LD_4C_, _LD_4D_, _LD_4E_, _LD_4F_, // 0x40
     _LD_50_, _LD_51_, _LD_52_, _LD_53_, _LD_54_, _LD_55_, _LD_56_, _LD_57_, _LD_58_, _LD_59_, _LD_5A_, _LD_5B_, _LD_5C_, _LD_5D_, _LD_5E_, _LD_5F_, // 0x50
     _LD_60_, _LD_61_, _LD_62_, _LD_63_, _LD_64_, _LD_65_, _LD_66_, _LD_67_, _LD_68_, _LD_69_, _LD_6A_, _LD_6B_, _LD_6C_, _LD_6D_, _LD_6E_, _LD_6F_, // 0x60
@@ -850,6 +902,10 @@ test "opcode cycles metadata" {
     try std.testing.expect(OPCODES[0x70].metadata.cycles == 2); // LD (HL), B
     try std.testing.expect(OPCODES[0x2A].metadata.cycles == 2); // LD A, (HL+)
     try std.testing.expect(OPCODES[0x22].metadata.cycles == 2); // LD (HL+), A
+    try std.testing.expect(OPCODES[0x36].metadata.cycles == 3); // LD (HL), d8
+    try std.testing.expect(OPCODES[0x31].metadata.cycles == 3); // LD SP, d16
+    try std.testing.expect(OPCODES[0x08].metadata.cycles == 5); // LD (d16), SP
+
 }
 
 test "opcode flags - zero flag" {

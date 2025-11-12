@@ -61,6 +61,16 @@ pub inline fn mergeBytes(low: u8, high: u8) u16 {
     return @as(u16, low) | (@as(u16, high) << 8);
 }
 
+pub inline fn splitBytes(value: u16) struct {
+    low: u8,
+    high: u8,
+} {
+    return .{
+        .low = @as(u8, @intCast(value & 0x00FF)),
+        .high = @as(u8, @intCast((value >> 8) & 0x00FF)),
+    };
+}
+
 test "checkCarryAdd - basic addition without carry" {
     const std = @import("std");
 
@@ -308,4 +318,155 @@ test "checkBorrowSub - different integer types" {
     try std.testing.expect(result_u64.value == 0x0000_0000_FFFF_FFFF);
     try std.testing.expect(result_u64.borrow == false);
     try std.testing.expect(result_u64.halfBorrow == true); // Borrow from bit 32 to 31 (half of 64 bits)
+}
+
+test "mergeBytes - basic combinations" {
+    const std = @import("std");
+
+    // Test merging 0x00 and 0x00
+    const result1 = mergeBytes(0x00, 0x00);
+    try std.testing.expect(result1 == 0x0000);
+
+    // Test merging 0xFF and 0x00
+    const result2 = mergeBytes(0xFF, 0x00);
+    try std.testing.expect(result2 == 0x00FF);
+
+    // Test merging 0x00 and 0xFF
+    const result3 = mergeBytes(0x00, 0xFF);
+    try std.testing.expect(result3 == 0xFF00);
+
+    // Test merging 0xFF and 0xFF
+    const result4 = mergeBytes(0xFF, 0xFF);
+    try std.testing.expect(result4 == 0xFFFF);
+}
+
+test "mergeBytes - specific values" {
+    const std = @import("std");
+
+    // Test merging 0x34 and 0x12 -> 0x1234
+    const result1 = mergeBytes(0x34, 0x12);
+    try std.testing.expect(result1 == 0x1234);
+
+    // Test merging 0xCD and 0xAB -> 0xABCD
+    const result2 = mergeBytes(0xCD, 0xAB);
+    try std.testing.expect(result2 == 0xABCD);
+
+    // Test merging 0x00 and 0x80 -> 0x8000
+    const result3 = mergeBytes(0x00, 0x80);
+    try std.testing.expect(result3 == 0x8000);
+
+    // Test merging 0x01 and 0x00 -> 0x0001
+    const result4 = mergeBytes(0x01, 0x00);
+    try std.testing.expect(result4 == 0x0001);
+}
+
+test "splitBytes - basic values" {
+    const std = @import("std");
+
+    // Test splitting 0x0000
+    const result1 = splitBytes(0x0000);
+    try std.testing.expect(result1.low == 0x00);
+    try std.testing.expect(result1.high == 0x00);
+
+    // Test splitting 0x00FF
+    const result2 = splitBytes(0x00FF);
+    try std.testing.expect(result2.low == 0xFF);
+    try std.testing.expect(result2.high == 0x00);
+
+    // Test splitting 0xFF00
+    const result3 = splitBytes(0xFF00);
+    try std.testing.expect(result3.low == 0x00);
+    try std.testing.expect(result3.high == 0xFF);
+
+    // Test splitting 0xFFFF
+    const result4 = splitBytes(0xFFFF);
+    try std.testing.expect(result4.low == 0xFF);
+    try std.testing.expect(result4.high == 0xFF);
+}
+
+test "splitBytes - specific values" {
+    const std = @import("std");
+
+    // Test splitting 0x1234 -> low: 0x34, high: 0x12
+    const result1 = splitBytes(0x1234);
+    try std.testing.expect(result1.low == 0x34);
+    try std.testing.expect(result1.high == 0x12);
+
+    // Test splitting 0xABCD -> low: 0xCD, high: 0xAB
+    const result2 = splitBytes(0xABCD);
+    try std.testing.expect(result2.low == 0xCD);
+    try std.testing.expect(result2.high == 0xAB);
+
+    // Test splitting 0x8000 -> low: 0x00, high: 0x80
+    const result3 = splitBytes(0x8000);
+    try std.testing.expect(result3.low == 0x00);
+    try std.testing.expect(result3.high == 0x80);
+
+    // Test splitting 0x0001 -> low: 0x01, high: 0x00
+    const result4 = splitBytes(0x0001);
+    try std.testing.expect(result4.low == 0x01);
+    try std.testing.expect(result4.high == 0x00);
+}
+
+test "mergeBytes and splitBytes - roundtrip" {
+    const std = @import("std");
+
+    // Test that splitting and merging gives back the original value
+    const original1: u16 = 0x1234;
+    const split1 = splitBytes(original1);
+    const merged1 = mergeBytes(split1.low, split1.high);
+    try std.testing.expect(merged1 == original1);
+
+    const original2: u16 = 0xABCD;
+    const split2 = splitBytes(original2);
+    const merged2 = mergeBytes(split2.low, split2.high);
+    try std.testing.expect(merged2 == original2);
+
+    const original3: u16 = 0x0000;
+    const split3 = splitBytes(original3);
+    const merged3 = mergeBytes(split3.low, split3.high);
+    try std.testing.expect(merged3 == original3);
+
+    const original4: u16 = 0xFFFF;
+    const split4 = splitBytes(original4);
+    const merged4 = mergeBytes(split4.low, split4.high);
+    try std.testing.expect(merged4 == original4);
+
+    // Test with all possible byte combinations (comprehensive check)
+    var low: u8 = 0;
+    while (true) {
+        var high: u8 = 0;
+        while (true) {
+            const merged = mergeBytes(low, high);
+            const split = splitBytes(merged);
+            try std.testing.expect(split.low == low);
+            try std.testing.expect(split.high == high);
+
+            if (high == 255) break;
+            high += 1;
+        }
+        if (low == 255) break;
+        low += 1;
+    }
+}
+
+test "mergeBytes and splitBytes - edge cases" {
+    const std = @import("std");
+
+    // Test byte ordering is little-endian (low byte first)
+    const result1 = mergeBytes(0x78, 0x56);
+    try std.testing.expect(result1 == 0x5678);
+
+    // Verify that low byte is in bits 0-7
+    const result2 = mergeBytes(0x12, 0x00);
+    try std.testing.expect((result2 & 0x00FF) == 0x12);
+
+    // Verify that high byte is in bits 8-15
+    const result3 = mergeBytes(0x00, 0x34);
+    try std.testing.expect((result3 >> 8) == 0x34);
+
+    // Test split maintains byte positions
+    const split1 = splitBytes(0x9ABC);
+    try std.testing.expect(split1.low == 0xBC);
+    try std.testing.expect(split1.high == 0x9A);
 }
