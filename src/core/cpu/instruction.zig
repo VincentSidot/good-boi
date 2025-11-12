@@ -283,8 +283,6 @@ const op = struct {
 
         const cycle = cycleSrc * cycleDst; // Tiny hack because cycles are 1 or 2.
 
-        if (TS == RegisterMemoryOperation) {}
-
         const _inline = struct {
             fn execute(cpu: *Cpu) void {
                 const value = getSrc(cpu, sourceReg);
@@ -576,4 +574,347 @@ test "load inc dec" {
 
     try std.testing.expect(cpu.reg.single.a == 0x1B);
     try std.testing.expect(cpu.reg.get16(Register16.hl) == test_addr);
+}
+
+test "opcode INC8 - all registers" {
+    var cpu = Cpu.init();
+
+    // Test INC B (0x04)
+    cpu.reg.set8(.b, 0x0F);
+    OPCODES[0x04].execute(&cpu);
+    try std.testing.expect(cpu.reg.get8(.b) == 0x10);
+    try std.testing.expect(cpu.reg.single.f.z == false);
+    try std.testing.expect(cpu.reg.single.f.n == false);
+    try std.testing.expect(cpu.reg.single.f.h == true); // Half carry from 0x0F to 0x10
+
+    // Test INC C (0x0C)
+    cpu.reg.set8(.c, 0xFF);
+    OPCODES[0x0C].execute(&cpu);
+    try std.testing.expect(cpu.reg.get8(.c) == 0x00);
+    try std.testing.expect(cpu.reg.single.f.z == true);
+    try std.testing.expect(cpu.reg.single.f.h == true);
+
+    // Test INC D (0x14)
+    cpu.reg.set8(.d, 0x42);
+    OPCODES[0x14].execute(&cpu);
+    try std.testing.expect(cpu.reg.get8(.d) == 0x43);
+    try std.testing.expect(cpu.reg.single.f.z == false);
+    try std.testing.expect(cpu.reg.single.f.h == false);
+
+    // Test INC E (0x1C)
+    cpu.reg.set8(.e, 0x1F);
+    OPCODES[0x1C].execute(&cpu);
+    try std.testing.expect(cpu.reg.get8(.e) == 0x20);
+    try std.testing.expect(cpu.reg.single.f.h == true);
+
+    // Test INC H (0x24)
+    cpu.reg.set8(.h, 0x00);
+    OPCODES[0x24].execute(&cpu);
+    try std.testing.expect(cpu.reg.get8(.h) == 0x01);
+    try std.testing.expect(cpu.reg.single.f.z == false);
+
+    // Test INC L (0x2C)
+    cpu.reg.set8(.l, 0xFE);
+    OPCODES[0x2C].execute(&cpu);
+    try std.testing.expect(cpu.reg.get8(.l) == 0xFF);
+
+    // Test INC A (0x3C)
+    cpu.reg.set8(.a, 0x7F);
+    OPCODES[0x3C].execute(&cpu);
+    try std.testing.expect(cpu.reg.get8(.a) == 0x80);
+}
+
+test "opcode DEC8 - all registers" {
+    var cpu = Cpu.init();
+
+    // Test DEC B (0x05)
+    cpu.reg.set8(.b, 0x01);
+    OPCODES[0x05].execute(&cpu);
+    try std.testing.expect(cpu.reg.get8(.b) == 0x00);
+    try std.testing.expect(cpu.reg.single.f.z == true);
+    try std.testing.expect(cpu.reg.single.f.n == true);
+    try std.testing.expect(cpu.reg.single.f.h == false);
+
+    // Test DEC C (0x0D) - underflow
+    cpu.reg.set8(.c, 0x00);
+    OPCODES[0x0D].execute(&cpu);
+    try std.testing.expect(cpu.reg.get8(.c) == 0xFF);
+    try std.testing.expect(cpu.reg.single.f.z == false);
+    try std.testing.expect(cpu.reg.single.f.h == true);
+
+    // Test DEC D (0x15) - half borrow
+    cpu.reg.set8(.d, 0x10);
+    OPCODES[0x15].execute(&cpu);
+    try std.testing.expect(cpu.reg.get8(.d) == 0x0F);
+    try std.testing.expect(cpu.reg.single.f.h == true);
+
+    // Test DEC E (0x1D)
+    cpu.reg.set8(.e, 0x42);
+    OPCODES[0x1D].execute(&cpu);
+    try std.testing.expect(cpu.reg.get8(.e) == 0x41);
+    try std.testing.expect(cpu.reg.single.f.h == false);
+
+    // Test DEC H (0x25)
+    cpu.reg.set8(.h, 0x80);
+    OPCODES[0x25].execute(&cpu);
+    try std.testing.expect(cpu.reg.get8(.h) == 0x7F);
+
+    // Test DEC L (0x2D)
+    cpu.reg.set8(.l, 0x20);
+    OPCODES[0x2D].execute(&cpu);
+    try std.testing.expect(cpu.reg.get8(.l) == 0x1F);
+
+    // Test DEC A (0x3D)
+    cpu.reg.set8(.a, 0x01);
+    OPCODES[0x3D].execute(&cpu);
+    try std.testing.expect(cpu.reg.get8(.a) == 0x00);
+    try std.testing.expect(cpu.reg.single.f.z == true);
+}
+
+test "opcode INC16 - all registers" {
+    var cpu = Cpu.init();
+
+    // Test INC BC (0x03)
+    cpu.reg.set16(.bc, 0x1234);
+    OPCODES[0x03].execute(&cpu);
+    try std.testing.expect(cpu.reg.get16(.bc) == 0x1235);
+
+    // Test INC DE (0x13)
+    cpu.reg.set16(.de, 0xFFFF);
+    OPCODES[0x13].execute(&cpu);
+    try std.testing.expect(cpu.reg.get16(.de) == 0x0000);
+
+    // Test INC HL (0x23)
+    cpu.reg.set16(.hl, 0x00FF);
+    OPCODES[0x23].execute(&cpu);
+    try std.testing.expect(cpu.reg.get16(.hl) == 0x0100);
+
+    // Test INC SP (0x33)
+    cpu.reg.set16(.sp, 0xFFFE);
+    OPCODES[0x33].execute(&cpu);
+    try std.testing.expect(cpu.reg.get16(.sp) == 0xFFFF);
+}
+
+test "opcode DEC16 - all registers" {
+    var cpu = Cpu.init();
+
+    // Test DEC BC (0x0B)
+    cpu.reg.set16(.bc, 0x1000);
+    OPCODES[0x0B].execute(&cpu);
+    try std.testing.expect(cpu.reg.get16(.bc) == 0x0FFF);
+
+    // Test DEC DE (0x1B)
+    cpu.reg.set16(.de, 0x0000);
+    OPCODES[0x1B].execute(&cpu);
+    try std.testing.expect(cpu.reg.get16(.de) == 0xFFFF);
+
+    // Test DEC HL (0x2B)
+    cpu.reg.set16(.hl, 0x0100);
+    OPCODES[0x2B].execute(&cpu);
+    try std.testing.expect(cpu.reg.get16(.hl) == 0x00FF);
+
+    // Test DEC SP (0x3B)
+    cpu.reg.set16(.sp, 0x0001);
+    OPCODES[0x3B].execute(&cpu);
+    try std.testing.expect(cpu.reg.get16(.sp) == 0x0000);
+}
+
+test "opcode LD - register to register combinations" {
+    var cpu = Cpu.init();
+
+    // Set initial values
+    cpu.reg.set8(.a, 0xAA);
+    cpu.reg.set8(.b, 0xBB);
+    cpu.reg.set8(.c, 0xCC);
+    cpu.reg.set8(.d, 0xDD);
+    cpu.reg.set8(.e, 0xEE);
+    cpu.reg.set8(.h, 0x11);
+    cpu.reg.set8(.l, 0x22);
+
+    // Test LD B, C (0x41)
+    OPCODES[0x41].execute(&cpu);
+    try std.testing.expect(cpu.reg.get8(.b) == 0xCC);
+
+    // Test LD D, E (0x53)
+    OPCODES[0x53].execute(&cpu);
+    try std.testing.expect(cpu.reg.get8(.d) == 0xEE);
+
+    // Test LD H, A (0x67)
+    OPCODES[0x67].execute(&cpu);
+    try std.testing.expect(cpu.reg.get8(.h) == 0xAA);
+
+    // Test LD A, L (0x7D)
+    OPCODES[0x7D].execute(&cpu);
+    try std.testing.expect(cpu.reg.get8(.a) == 0x22);
+
+    // Test LD C, H (0x4C)
+    OPCODES[0x4C].execute(&cpu);
+    try std.testing.expect(cpu.reg.get8(.c) == 0xAA);
+}
+
+test "opcode LD - memory operations" {
+    var cpu = Cpu.init();
+
+    const addr: u16 = 0x5000;
+
+    // Test LD (BC), A (0x02)
+    cpu.reg.set16(.bc, addr);
+    cpu.reg.set8(.a, 0x12);
+    OPCODES[0x02].execute(&cpu);
+    try std.testing.expect(cpu.ram.readByte(addr) == 0x12);
+
+    // Test LD A, (BC) (0x0A)
+    cpu.reg.set8(.a, 0x00);
+    OPCODES[0x0A].execute(&cpu);
+    try std.testing.expect(cpu.reg.get8(.a) == 0x12);
+
+    // Test LD (DE), A (0x12)
+    cpu.reg.set16(.de, addr + 1);
+    cpu.reg.set8(.a, 0x34);
+    OPCODES[0x12].execute(&cpu);
+    try std.testing.expect(cpu.ram.readByte(addr + 1) == 0x34);
+
+    // Test LD A, (DE) (0x1A)
+    cpu.reg.set8(.a, 0x00);
+    OPCODES[0x1A].execute(&cpu);
+    try std.testing.expect(cpu.reg.get8(.a) == 0x34);
+
+    // Test LD (HL), various registers
+    cpu.reg.set16(.hl, addr + 2);
+    cpu.reg.set8(.b, 0x56);
+    OPCODES[0x70].execute(&cpu); // LD (HL), B
+    try std.testing.expect(cpu.ram.readByte(addr + 2) == 0x56);
+
+    cpu.reg.set8(.c, 0x78);
+    OPCODES[0x71].execute(&cpu); // LD (HL), C
+    try std.testing.expect(cpu.ram.readByte(addr + 2) == 0x78);
+
+    // Test LD various registers, (HL)
+    cpu.ram.writeByte(addr + 3, 0x9A);
+    cpu.reg.set16(.hl, addr + 3);
+
+    OPCODES[0x46].execute(&cpu); // LD B, (HL)
+    try std.testing.expect(cpu.reg.get8(.b) == 0x9A);
+
+    OPCODES[0x4E].execute(&cpu); // LD C, (HL)
+    try std.testing.expect(cpu.reg.get8(.c) == 0x9A);
+
+    OPCODES[0x56].execute(&cpu); // LD D, (HL)
+    try std.testing.expect(cpu.reg.get8(.d) == 0x9A);
+}
+
+test "opcode LD - increment/decrement operations" {
+    var cpu = Cpu.init();
+
+    const base_addr: u16 = 0x6000;
+
+    // Setup memory
+    cpu.ram.writeByte(base_addr, 0x11);
+    cpu.ram.writeByte(base_addr + 1, 0x22);
+    cpu.ram.writeByte(base_addr + 2, 0x33);
+    cpu.ram.writeByte(base_addr - 1, 0x00);
+
+    // Test LD (HL+), A (0x22)
+    cpu.reg.set16(.hl, base_addr);
+    cpu.reg.set8(.a, 0xAA);
+    OPCODES[0x22].execute(&cpu);
+    try std.testing.expect(cpu.ram.readByte(base_addr) == 0xAA);
+    try std.testing.expect(cpu.reg.get16(.hl) == base_addr + 1);
+
+    // Test LD A, (HL+) (0x2A)
+    cpu.reg.set16(.hl, base_addr + 1);
+    OPCODES[0x2A].execute(&cpu);
+    try std.testing.expect(cpu.reg.get8(.a) == 0x22);
+    try std.testing.expect(cpu.reg.get16(.hl) == base_addr + 2);
+
+    // Test LD (HL-), A (0x32)
+    cpu.reg.set8(.a, 0xBB);
+    OPCODES[0x32].execute(&cpu);
+    try std.testing.expect(cpu.ram.readByte(base_addr + 2) == 0xBB);
+    try std.testing.expect(cpu.reg.get16(.hl) == base_addr + 1);
+
+    // Test LD A, (HL-) (0x3A)
+    OPCODES[0x3A].execute(&cpu);
+    try std.testing.expect(cpu.reg.get8(.a) == 0x22);
+    try std.testing.expect(cpu.reg.get16(.hl) == base_addr);
+}
+
+test "opcode cycles metadata" {
+    // Verify cycle counts are correct
+    try std.testing.expect(OPCODES[0x00].metadata.cycles == 1); // NOP
+    try std.testing.expect(OPCODES[0x04].metadata.cycles == 1); // INC B
+    try std.testing.expect(OPCODES[0x03].metadata.cycles == 2); // INC BC
+    try std.testing.expect(OPCODES[0x34].metadata.cycles == 3); // INC (HL)
+    try std.testing.expect(OPCODES[0x47].metadata.cycles == 1); // LD B, A
+    try std.testing.expect(OPCODES[0x46].metadata.cycles == 2); // LD B, (HL)
+    try std.testing.expect(OPCODES[0x70].metadata.cycles == 2); // LD (HL), B
+    try std.testing.expect(OPCODES[0x2A].metadata.cycles == 2); // LD A, (HL+)
+    try std.testing.expect(OPCODES[0x22].metadata.cycles == 2); // LD (HL+), A
+}
+
+test "opcode flags - zero flag" {
+    var cpu = Cpu.init();
+
+    // INC setting zero flag
+    cpu.reg.set8(.b, 0xFF);
+    OPCODES[0x04].execute(&cpu); // INC B
+    try std.testing.expect(cpu.reg.single.f.z == true);
+
+    // INC clearing zero flag
+    OPCODES[0x04].execute(&cpu); // INC B again
+    try std.testing.expect(cpu.reg.single.f.z == false);
+
+    // DEC setting zero flag
+    cpu.reg.set8(.c, 0x01);
+    OPCODES[0x0D].execute(&cpu); // DEC C
+    try std.testing.expect(cpu.reg.single.f.z == true);
+
+    // DEC clearing zero flag
+    OPCODES[0x0D].execute(&cpu); // DEC C again
+    try std.testing.expect(cpu.reg.single.f.z == false);
+}
+
+test "opcode flags - half carry/borrow" {
+    var cpu = Cpu.init();
+
+    // INC half carry tests
+    cpu.reg.set8(.b, 0x0F);
+    OPCODES[0x04].execute(&cpu); // INC B
+    try std.testing.expect(cpu.reg.single.f.h == true);
+
+    cpu.reg.set8(.b, 0x10);
+    OPCODES[0x04].execute(&cpu); // INC B
+    try std.testing.expect(cpu.reg.single.f.h == false);
+
+    cpu.reg.set8(.b, 0xFF);
+    OPCODES[0x04].execute(&cpu); // INC B
+    try std.testing.expect(cpu.reg.single.f.h == true);
+
+    // DEC half borrow tests
+    cpu.reg.set8(.c, 0x10);
+    OPCODES[0x0D].execute(&cpu); // DEC C
+    try std.testing.expect(cpu.reg.single.f.h == true);
+
+    cpu.reg.set8(.c, 0x0F);
+    OPCODES[0x0D].execute(&cpu); // DEC C
+    try std.testing.expect(cpu.reg.single.f.h == false);
+
+    cpu.reg.set8(.c, 0x00);
+    OPCODES[0x0D].execute(&cpu); // DEC C
+    try std.testing.expect(cpu.reg.single.f.h == true);
+}
+
+test "opcode flags - N flag" {
+    var cpu = Cpu.init();
+
+    // INC should clear N flag
+    cpu.reg.set8(.b, 0x42);
+    cpu.reg.single.f.n = true;
+    OPCODES[0x04].execute(&cpu); // INC B
+    try std.testing.expect(cpu.reg.single.f.n == false);
+
+    // DEC should set N flag
+    cpu.reg.set8(.c, 0x42);
+    OPCODES[0x0D].execute(&cpu); // DEC C
+    try std.testing.expect(cpu.reg.single.f.n == true);
 }
