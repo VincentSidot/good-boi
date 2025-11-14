@@ -23,13 +23,3 @@ pub const Memory = struct {
         self.memory[address] = value;
     }
 };
-
-test "RAW RAM read/write" {
-    const std = @import("std");
-    var ram = Memory.init();
-
-    ram.writeByte(0x1234, 0xAB);
-    const value = ram.readByte(0x1234);
-
-    try std.testing.expect(value == 0xAB);
-}

@@ -20,7 +20,7 @@ const InstructionMetadata = struct {
 };
 
 const Instruction = struct {
-    execute: fn (cpu: *Cpu) callconv(.@"inline") void,
+    execute: *const fn (cpu: *Cpu) void,
     metadata: InstructionMetadata,
 };
 
@@ -30,7 +30,7 @@ fn Unimplemented(comptime code: u8) Instruction {
     const nameFmt = std.fmt.comptimePrint("UNIMPLEMENTED(0x{X:02})", .{code});
 
     const inner = struct {
-        inline fn logger(_: *Cpu) void {
+        fn logger(_: *Cpu) void {
             utils.log.warn(logFmt, .{});
         }
     };
@@ -189,79 +189,99 @@ const ArithmeticOperation = enum {
     SBC,
     CP,
 
-    const Output = struct {
-        value: u8,
-        carry: bool,
-        halfCarry: bool,
-    };
-
-    inline fn _add(a: u8, b: u8, _: bool) ArithmeticOperation.Output {
-        const res = math.checkCarryAdd(u8, a, b);
-
-        return .{
-            .value = res.value,
-            .carry = res.carry,
-            .halfCarry = res.halfCarry,
+    fn Output(comptime T: type) type {
+        return struct {
+            value: T,
+            carry: bool,
+            halfCarry: bool,
         };
     }
 
-    inline fn _sub(a: u8, b: u8, _: bool) ArithmeticOperation.Output {
-        const res = math.checkBorrowSub(u8, a, b);
-
-        return .{
-            .value = res.value,
-            .carry = res.borrow,
-            .halfCarry = res.halfBorrow,
-        };
+    fn OutputFn(comptime T: type) type {
+        return fn (a: T, b: T, carry: bool) callconv(.@"inline") ArithmeticOperation.Output(T);
     }
 
-    inline fn _adc(a: u8, b: u8, carry: bool) ArithmeticOperation.Output {
-        const carryVal: u8 = if (carry) 1 else 0;
-        const res1 = math.checkCarryAdd(u8, a, b);
-        const res2 = math.checkCarryAdd(u8, res1.value, carryVal);
+    inline fn _add(comptime T: type) ArithmeticOperation.OutputFn(T) {
+        const _inline = struct {
+            inline fn _add(a: T, b: T, _: bool) ArithmeticOperation.Output(T) {
+                const res = math.checkCarryAdd(T, a, b);
 
-        const resCarry = res1.carry or res2.carry;
-        const resHalfCarry = res1.halfCarry or res2.halfCarry;
-
-        return .{
-            .value = res2.value,
-            .carry = resCarry,
-            .halfCarry = resHalfCarry,
+                return .{
+                    .value = res.value,
+                    .carry = res.carry,
+                    .halfCarry = res.halfCarry,
+                };
+            }
         };
+
+        return _inline._add;
     }
 
-    inline fn _sbc(a: u8, b: u8, carry: bool) ArithmeticOperation.Output {
-        const carryVal: u8 = if (carry) 1 else 0;
-        const res1 = math.checkBorrowSub(u8, a, b);
-        const res2 = math.checkBorrowSub(u8, res1.value, carryVal);
+    inline fn _sub(comptime T: type) ArithmeticOperation.OutputFn(T) {
+        const _inline = struct {
+            inline fn _sub(a: T, b: T, _: bool) ArithmeticOperation.Output(T) {
+                const res = math.checkBorrowSub(T, a, b);
 
-        const resCarry = res1.borrow or res2.borrow;
-        const resHalfCarry = res1.halfBorrow or res2.halfBorrow;
-
-        return .{
-            .value = res2.value,
-            .carry = resCarry,
-            .halfCarry = resHalfCarry,
+                return .{
+                    .value = res.value,
+                    .carry = res.borrow,
+                    .halfCarry = res.halfBorrow,
+                };
+            }
         };
+
+        return _inline._sub;
     }
 
-    inline fn _cp(a: u8, b: u8, _: bool) ArithmeticOperation.Output {
-        const res = math.checkBorrowSub(u8, a, b);
+    inline fn _adc(comptime T: type) ArithmeticOperation.OutputFn(T) {
+        const _inline = struct {
+            inline fn _adc(a: T, b: T, carry: bool) ArithmeticOperation.Output(T) {
+                const carryVal: T = if (carry) 1 else 0;
+                const res1 = math.checkCarryAdd(T, a, b);
+                const res2 = math.checkCarryAdd(T, res1.value, carryVal);
 
-        return .{
-            .value = a, // Tiny hack to not modify the first register (I hope compiler optimizes this out)
-            .carry = res.borrow,
-            .halfCarry = res.halfBorrow,
+                const resCarry = res1.carry or res2.carry;
+                const resHalfCarry = res1.halfCarry or res2.halfCarry;
+
+                return .{
+                    .value = res2.value,
+                    .carry = resCarry,
+                    .halfCarry = resHalfCarry,
+                };
+            }
         };
+
+        return _inline._adc;
     }
 
-    fn asFn(comptime self: ArithmeticOperation) fn (u8, u8, bool) ArithmeticOperation.Output {
+    inline fn _sbc(comptime T: type) ArithmeticOperation.OutputFn(T) {
+        const _inline = struct {
+            inline fn _sbc(a: T, b: T, carry: bool) ArithmeticOperation.Output(T) {
+                const carryVal: T = if (carry) 1 else 0;
+                const res1 = math.checkBorrowSub(T, a, b);
+                const res2 = math.checkBorrowSub(T, res1.value, carryVal);
+
+                const resCarry = res1.borrow or res2.borrow;
+                const resHalfCarry = res1.halfBorrow or res2.halfBorrow;
+
+                return .{
+                    .value = res2.value,
+                    .carry = resCarry,
+                    .halfCarry = resHalfCarry,
+                };
+            }
+        };
+
+        return _inline._sbc;
+    }
+
+    fn asFn(comptime self: ArithmeticOperation, comptime T: type) ArithmeticOperation.OutputFn(T) {
         switch (self) {
-            .ADD => return _add,
-            .SUB => return _sub,
-            .ADC => return _adc,
-            .SBC => return _sbc,
-            .CP => return _cp,
+            .ADD => return ArithmeticOperation._add(T),
+            .SUB => return ArithmeticOperation._sub(T),
+            .ADC => return ArithmeticOperation._adc(T),
+            .SBC => return ArithmeticOperation._sbc(T),
+            .CP => return ArithmeticOperation._sub(T),
         }
     }
 
@@ -328,11 +348,11 @@ fn regAsText(reg: anytype) []const u8 {
 }
 
 const op = struct {
-    inline fn nop_00(cpu: *Cpu) void {
+    fn nop_00(cpu: *Cpu) void {
         _ = cpu; // unused
     }
 
-    inline fn ld_e0(cpu: *Cpu) void {
+    fn ld_e0(cpu: *Cpu) void {
         const offset = cpu.fetch();
         const addr = 0xFF00 + @as(u16, offset);
 
@@ -340,7 +360,7 @@ const op = struct {
         cpu.ram.writeByte(addr, value);
     }
 
-    inline fn ld_f0(cpu: *Cpu) void {
+    fn ld_f0(cpu: *Cpu) void {
         const offset = cpu.fetch();
         const addr = 0xFF00 + @as(u16, offset);
 
@@ -348,7 +368,7 @@ const op = struct {
         cpu.reg.single.a = value;
     }
 
-    inline fn ld_08(cpu: *Cpu) void {
+    fn ld_08(cpu: *Cpu) void {
         const addr = cpu.fetch16();
         const valueSplit = math.splitBytes(cpu.reg.pair.sp);
 
@@ -356,26 +376,26 @@ const op = struct {
         cpu.ram.writeByte(addr + 1, valueSplit.high);
     }
 
-    inline fn ld_e2(cpu: *Cpu) void {
+    fn ld_e2(cpu: *Cpu) void {
         const addr = 0xFF00 + @as(u16, cpu.reg.single.c);
         const value = cpu.reg.single.a;
 
         cpu.ram.writeByte(addr, value);
     }
 
-    inline fn ld_f2(cpu: *Cpu) void {
+    fn ld_f2(cpu: *Cpu) void {
         const addr = 0xFF00 + @as(u16, cpu.reg.single.c);
         const value = cpu.ram.readByte(addr);
 
         cpu.reg.single.a = value;
     }
 
-    inline fn ld_f8(cpu: *Cpu) void {
+    fn add_e8(cpu: *Cpu) void {
 
         // Treat immediate values as i8
         var offset: u16 = @intCast(cpu.fetch());
         // Sign extend to 16 bits if negative
-        if (offset & 0x0080 != 0) {
+        if (offset & 0x00_80 != 0) {
             offset = 0xFF_00 | offset;
         }
 
@@ -387,21 +407,46 @@ const op = struct {
         var flags = cpu.reg.single.f;
         flags.z = false;
         flags.n = false;
-        flags.c = value.carry;
         flags.h = value.halfCarry;
+        flags.c = value.carry;
+        cpu.reg.single.f = flags;
+
+        // Set registers
+        cpu.reg.pair.sp = value.value;
+    }
+
+    fn ld_f8(cpu: *Cpu) void {
+
+        // Treat immediate values as i8
+        var offset: u16 = @intCast(cpu.fetch());
+        // Sign extend to 16 bits if negative
+        if (offset & 0x00_80 != 0) {
+            offset = 0xFF_00 | offset;
+        }
+
+        const sp = cpu.reg.pair.sp;
+
+        const value = math.checkCarryAdd(u16, sp, offset);
+
+        // Flags: 00HC
+        var flags = cpu.reg.single.f;
+        flags.z = false;
+        flags.n = false;
+        flags.h = value.halfCarry;
+        flags.c = value.carry;
 
         // Set registers
         cpu.reg.pair.hl = value.value;
     }
 
-    inline fn ld_ea(cpu: *Cpu) void {
+    fn ld_ea(cpu: *Cpu) void {
         const addr = cpu.fetch16();
         const value = cpu.reg.single.a;
 
         cpu.ram.writeByte(addr, value);
     }
 
-    inline fn ld_fa(cpu: *Cpu) void {
+    fn ld_fa(cpu: *Cpu) void {
         const addr = cpu.fetch16();
         const value = cpu.ram.readByte(addr);
 
@@ -424,7 +469,7 @@ const op = struct {
         };
 
         const _inline = struct {
-            inline fn execute(cpu: *Cpu) void {
+            fn execute(cpu: *Cpu) void {
                 const value = getFn(cpu, reg);
 
                 const result = math.checkCarryAdd(targetInt, value, 1);
@@ -466,7 +511,7 @@ const op = struct {
         };
 
         const _inline = struct {
-            inline fn execute(cpu: *Cpu) void {
+            fn execute(cpu: *Cpu) void {
                 const value = getFn(cpu, reg);
 
                 const result = math.checkBorrowSub(targetInt, value, 1);
@@ -521,7 +566,7 @@ const op = struct {
         const cycle = cycleSrc + cycleDst; // Tiny hack because cycles are 1 or 2.
 
         const _inline = struct {
-            inline fn execute(cpu: *Cpu) void {
+            fn execute(cpu: *Cpu) void {
                 const value = getSrc(cpu, sourceReg);
                 setDst(cpu, destReg, value);
 
@@ -555,7 +600,7 @@ const op = struct {
         };
 
         const _inline = struct {
-            inline fn execute(cpu: *Cpu) void {
+            fn execute(cpu: *Cpu) void {
                 const destValue = cpu.reg.get8(dest);
                 const sourceValue = getSrc(cpu, source);
 
@@ -585,34 +630,53 @@ const op = struct {
         };
     }
 
-    fn arithmetic(comptime ops: ArithmeticOperation, comptime dest: R8, comptime source: anytype) Instruction {
+    fn arithmetic(comptime ops: ArithmeticOperation, comptime dest: anytype, comptime source: anytype) Instruction {
+        const TD = @TypeOf(dest);
         const TS = @TypeOf(source);
 
-        const getSrc, const cycles = comptime blkS: {
+        const getDst, const setDst, const editZ, const bitTypeDst = comptime blkD: {
+            switch (TD) {
+                R8 => break :blkD .{ getReg8, setReg8, true, u8 },
+                R16 => break :blkD .{ getReg16, setReg16, false, u16 },
+                else => @compileError("dest must be of type R8, or R16"),
+            }
+        };
+
+        const getSrc, const cycles, const bitTypeSrc = comptime blkS: {
             switch (TS) {
-                R8 => break :blkS .{ getReg8, 1 },
-                RM => break :blkS .{ getMemory(RegisterMemoryOperation._nop), 2 },
-                IM8 => break :blkS .{ getIm8, 2 },
-                else => @compileError("source must be of type R8, RM or IM8"),
+                R8 => break :blkS .{ getReg8, 1, u8 },
+                R16 => break :blkS .{ getReg16, 2, u16 },
+                RM => break :blkS .{ getMemory(RegisterMemoryOperation._nop), 2, u8 },
+                IM8 => break :blkS .{ getIm8, 2, u8 },
+                else => @compileError("source must be of type R8, R16, RM or IM8"),
+            }
+        };
+
+        const bitType = comptime blkT: {
+            if (bitTypeDst != bitTypeSrc) {
+                @compileError("dest and source must be of the same bit type");
+            } else {
+                break :blkT bitTypeDst;
             }
         };
 
         const _inline = struct {
-            inline fn execute(cpu: *Cpu) void {
-                const destValue = cpu.reg.get8(dest);
+            fn execute(cpu: *Cpu) void {
+                const destValue = getDst(cpu, dest);
                 const sourceValue = getSrc(cpu, source);
 
-                const res = ops.asFn()(destValue, sourceValue, cpu.reg.single.f.c);
+                const res = ops.asFn(bitType)(destValue, sourceValue, cpu.reg.single.f.c);
 
-                // Flags ZxHC => x depends on ops
+                // Flags ZxHC => x depends on ops (on non 16bit-ops)
+                // Flags -xHC => x depends on ops (on 16bit-ops)
                 var flags = cpu.reg.single.f;
-                flags.z = res.value == 0;
+                if (editZ) flags.z = res.value == 0;
                 flags.n = ops.setNFlags();
                 flags.h = res.halfCarry;
                 flags.c = res.carry;
                 cpu.reg.single.f = flags;
 
-                cpu.reg.set8(dest, res.value);
+                if (ops != .CP) setDst(cpu, dest, res.value); // Do not store result if CP
             }
         };
 
@@ -815,6 +879,11 @@ const __LD_5F: Instruction = op.load(R8.e, R8.a);
 const __LD_6F: Instruction = op.load(R8.l, R8.a);
 const __LD_7F: Instruction = op.load(R8.a, R8.a);
 
+const _ADD_09: Instruction = op.arithmetic(.ADD, R16.hl, R16.bc);
+const _ADD_19: Instruction = op.arithmetic(.ADD, R16.hl, R16.de);
+const _ADD_29: Instruction = op.arithmetic(.ADD, R16.hl, R16.hl);
+const _ADD_39: Instruction = op.arithmetic(.ADD, R16.hl, R16.sp);
+
 const _ADD_80: Instruction = op.arithmetic(.ADD, R8.a, R8.b);
 const _ADD_81: Instruction = op.arithmetic(.ADD, R8.a, R8.c);
 const _ADD_82: Instruction = op.arithmetic(.ADD, R8.a, R8.d);
@@ -824,6 +893,14 @@ const _ADD_85: Instruction = op.arithmetic(.ADD, R8.a, R8.l);
 const _ADD_86: Instruction = op.arithmetic(.ADD, R8.a, RM.hl);
 const _ADD_C6: Instruction = op.arithmetic(.ADD, R8.a, IM8{});
 const _ADD_87: Instruction = op.arithmetic(.ADD, R8.a, R8.a);
+
+const _ADD_E8: Instruction = .{
+    .execute = op.add_e8,
+    .metadata = .{
+        .name = "ADD SP, i8",
+        .cycles = 4,
+    },
+};
 
 const _ADC_88: Instruction = op.arithmetic(.ADC, R8.a, R8.b);
 const _ADC_89: Instruction = op.arithmetic(.ADC, R8.a, R8.c);
@@ -881,8 +958,8 @@ const __OR_B2: Instruction = op.bits(.OR, R8.a, R8.d);
 const __OR_B3: Instruction = op.bits(.OR, R8.a, R8.e);
 const __OR_B4: Instruction = op.bits(.OR, R8.a, R8.h);
 const __OR_B5: Instruction = op.bits(.OR, R8.a, R8.l);
-const __OR_F6: Instruction = op.bits(.OR, R8.a, RM.hl);
-const __OR_B6: Instruction = op.bits(.OR, R8.a, IM8{});
+const __OR_B6: Instruction = op.bits(.OR, R8.a, RM.hl);
+const __OR_F6: Instruction = op.bits(.OR, R8.a, IM8{});
 const __OR_B7: Instruction = op.bits(.OR, R8.a, R8.a);
 
 const __CP_B8: Instruction = op.arithmetic(.CP, R8.a, R8.b);
@@ -898,12 +975,12 @@ const __CP_BF: Instruction = op.arithmetic(.CP, R8.a, R8.a);
 const U = Unimplemented;
 
 // From https://izik1.github.io/gbops/
-const OPCODES: [256]Instruction = .{
+pub const OPCODES: [256]Instruction = .{
     //0x00,  0x01,    0x02,    0x03,    0x04,    0x05,    0x06,    0x07,    0x08,    0x09,    0x0A,    0x0B,    0x0C,    0x0D,    0x0E,    0x0F,
-    _NOP_00, __LD_01, __LD_02, _INC_03, _INC_04, _DEC_05, __LD_06, U(0x07), __LD_08, U(0x09), __LD_0A, _DEC_0B, _INC_0C, _DEC_0D, __LD_0E, U(0x0F), // 0x00
-    U(0x10), __LD_11, __LD_12, _INC_13, _INC_14, _DEC_15, __LD_16, U(0x17), U(0x18), U(0x19), __LD_1A, _DEC_1B, _INC_1C, _DEC_1D, __LD_1E, U(0x1F), // 0x10
-    U(0x20), __LD_21, __LD_22, _INC_23, _INC_24, _DEC_25, __LD_26, U(0x27), U(0x28), U(0x29), __LD_2A, _DEC_2B, _INC_2C, _DEC_2D, __LD_2E, U(0x2F), // 0x20
-    U(0x30), __LD_31, __LD_32, _INC_33, _INC_34, _DEC_35, __LD_36, U(0x37), U(0x38), U(0x39), __LD_3A, _DEC_3B, _INC_3C, _DEC_3D, __LD_3E, U(0x3F), // 0x30
+    _NOP_00, __LD_01, __LD_02, _INC_03, _INC_04, _DEC_05, __LD_06, U(0x07), __LD_08, _ADD_09, __LD_0A, _DEC_0B, _INC_0C, _DEC_0D, __LD_0E, U(0x0F), // 0x00
+    U(0x10), __LD_11, __LD_12, _INC_13, _INC_14, _DEC_15, __LD_16, U(0x17), U(0x18), _ADD_19, __LD_1A, _DEC_1B, _INC_1C, _DEC_1D, __LD_1E, U(0x1F), // 0x10
+    U(0x20), __LD_21, __LD_22, _INC_23, _INC_24, _DEC_25, __LD_26, U(0x27), U(0x28), _ADD_29, __LD_2A, _DEC_2B, _INC_2C, _DEC_2D, __LD_2E, U(0x2F), // 0x20
+    U(0x30), __LD_31, __LD_32, _INC_33, _INC_34, _DEC_35, __LD_36, U(0x37), U(0x38), _ADD_39, __LD_3A, _DEC_3B, _INC_3C, _DEC_3D, __LD_3E, U(0x3F), // 0x30
     __LD_40, __LD_41, __LD_42, __LD_43, __LD_44, __LD_45, __LD_46, __LD_47, __LD_48, __LD_49, __LD_4A, __LD_4B, __LD_4C, __LD_4D, __LD_4E, __LD_4F, // 0x40
     __LD_50, __LD_51, __LD_52, __LD_53, __LD_54, __LD_55, __LD_56, __LD_57, __LD_58, __LD_59, __LD_5A, __LD_5B, __LD_5C, __LD_5D, __LD_5E, __LD_5F, // 0x50
     __LD_60, __LD_61, __LD_62, __LD_63, __LD_64, __LD_65, __LD_66, __LD_67, __LD_68, __LD_69, __LD_6A, __LD_6B, __LD_6C, __LD_6D, __LD_6E, __LD_6F, // 0x60
@@ -914,517 +991,6 @@ const OPCODES: [256]Instruction = .{
     __OR_B0, __OR_B1, __OR_B2, __OR_B3, __OR_B4, __OR_B5, __OR_B6, __OR_B7, __CP_B8, __CP_B9, __CP_BA, __CP_BB, __CP_BC, __CP_BD, __CP_BE, __CP_BF, // 0xB0
     U(0xC0), U(0xC1), U(0xC2), U(0xC3), U(0xC4), U(0xC5), _ADD_C6, U(0xC7), U(0xC8), U(0xC9), U(0xCA), U(0xCB), U(0xCC), U(0xCD), _ADC_CE, U(0xCF), // 0xC0
     U(0xD0), U(0xD1), U(0xD2), U(0xD3), U(0xD4), U(0xD5), _SUB_D6, U(0xD7), U(0xD8), U(0xD9), U(0xDA), U(0xDB), U(0xDC), U(0xDD), _SBC_DE, U(0xDF), // 0xD0
-    __LD_E0, U(0xE1), __LD_E2, U(0xE3), U(0xE4), U(0xE5), _AND_E6, U(0xE7), U(0xE8), U(0xE9), __LD_EA, U(0xEB), U(0xEC), U(0xED), _XOR_EE, U(0xEF), // 0xE0
-    __LD_F0, U(0xF1), __LD_F2, U(0xF3), U(0xF4), U(0xF5), __OR_F6, U(0xF7), __LD_F8, __LD_F9, __LD_FA, U(0xFB), U(0xFC), U(0xFD), __CP_BE, U(0xFF), // 0xF0
+    __LD_E0, U(0xE1), __LD_E2, U(0xE3), U(0xE4), U(0xE5), _AND_E6, U(0xE7), _ADD_E8, U(0xE9), __LD_EA, U(0xEB), U(0xEC), U(0xED), _XOR_EE, U(0xEF), // 0xE0
+    __LD_F0, U(0xF1), __LD_F2, U(0xF3), U(0xF4), U(0xF5), __OR_F6, U(0xF7), __LD_F8, __LD_F9, __LD_FA, U(0xFB), U(0xFC), U(0xFD), __CP_FE, U(0xFF), // 0xF0
 };
-
-test "opcode NOP" {
-    var cpu: Cpu = .{};
-
-    const opcode = OPCODES[0x00];
-    opcode.execute(&cpu);
-}
-
-test "opcode unimplemented" {
-    var cpu: Cpu = .{};
-
-    const opcode = OPCODES[0xC3]; // This should stays unimplemented
-    opcode.execute(&cpu);
-
-    std.debug.print("Opcode name: {s}\n", .{opcode.metadata.name});
-
-    try std.testing.expectEqualStrings(opcode.metadata.name, "UNIMPLEMENTED(0xC3)");
-}
-
-test "opcode INC16" {
-    var cpu: Cpu = .{};
-    cpu.reg.set16(.bc, 0xFFFF);
-
-    const opcode = OPCODES[0x03]; // INC BC
-    opcode.execute(&cpu);
-
-    try std.testing.expect(cpu.reg.get16(.bc) == 0x0000);
-    try std.testing.expect(cpu.reg.single.f.z == false);
-    try std.testing.expect(cpu.reg.single.f.n == false);
-    try std.testing.expect(cpu.reg.single.f.h == false);
-    try std.testing.expect(cpu.reg.single.f.c == false);
-}
-
-test "opcode INC Memory" {
-    var cpu: Cpu = .{};
-
-    const addr: u16 = 0x2000;
-
-    cpu.reg.set16(.hl, addr);
-    cpu.ram.writeByte(addr, 0xFE);
-
-    const inc_opcode = OPCODES[0x34]; // INC (HL)
-    const dec_opcode = OPCODES[0x35]; // DEC (HL)
-
-    inc_opcode.execute(&cpu);
-    try std.testing.expect(cpu.ram.readByte(addr) == 0xFF);
-    try std.testing.expect(cpu.reg.single.f.z == false);
-    try std.testing.expect(cpu.reg.single.f.n == false);
-    try std.testing.expect(cpu.reg.single.f.h == false);
-    try std.testing.expect(cpu.reg.single.f.c == false);
-
-    inc_opcode.execute(&cpu);
-    try std.testing.expect(cpu.ram.readByte(addr) == 0x00);
-    try std.testing.expect(cpu.reg.single.f.z == true);
-    try std.testing.expect(cpu.reg.single.f.n == false);
-    try std.testing.expect(cpu.reg.single.f.h == true);
-    try std.testing.expect(cpu.reg.single.f.c == false);
-
-    dec_opcode.execute(&cpu);
-    try std.testing.expect(cpu.ram.readByte(addr) == 0xFF);
-    try std.testing.expect(cpu.reg.single.f.z == false);
-    try std.testing.expect(cpu.reg.single.f.n == true);
-    try std.testing.expect(cpu.reg.single.f.h == true);
-    try std.testing.expect(cpu.reg.single.f.c == false);
-
-    dec_opcode.execute(&cpu);
-    try std.testing.expect(cpu.ram.readByte(addr) == 0xFE);
-    try std.testing.expect(cpu.reg.single.f.z == false);
-    try std.testing.expect(cpu.reg.single.f.n == true);
-    try std.testing.expect(cpu.reg.single.f.h == false);
-    try std.testing.expect(cpu.reg.single.f.c == false);
-}
-
-test "load" {
-    var cpu = Cpu.init();
-
-    cpu.reg.set8(Register8.a, 0x12);
-    cpu.reg.set8(Register8.b, 0x00);
-
-    const op_a_b = OPCODES[0x47]; // LD B, A
-    op_a_b.execute(&cpu);
-
-    try std.testing.expect(cpu.reg.get8(Register8.b) == 0x12);
-
-    const op_b_hl = OPCODES[0x70]; // LD (HL), B
-    const test_addr: u16 = 0x3000;
-    cpu.reg.set16(Register16.hl, test_addr);
-
-    op_b_hl.execute(&cpu);
-
-    try std.testing.expect(cpu.ram.readByte(test_addr) == 0x12);
-
-    const op_hl_a = OPCODES[0x7E]; // LD A, (HL)
-    op_hl_a.execute(&cpu);
-
-    try std.testing.expect(cpu.reg.single.a == 0x12);
-}
-
-test "load inc dec" {
-    var cpu = Cpu.init();
-
-    var test_addr: u16 = 0x4000;
-
-    cpu.ram.writeByte(test_addr, 0x1A);
-    cpu.ram.writeByte(test_addr + 1, 0x1B);
-    cpu.reg.pair.hl = test_addr;
-
-    const op_ld_hl_inc_a = OPCODES[0x2A]; // LD A, (HL+)
-    op_ld_hl_inc_a.execute(&cpu);
-    test_addr += 1;
-
-    try std.testing.expect(cpu.reg.single.a == 0x1A);
-    try std.testing.expect(cpu.reg.get16(Register16.hl) == test_addr);
-
-    const op_ld_hl_dec_a = OPCODES[0x3A]; // LD A, (HL-)
-    op_ld_hl_dec_a.execute(&cpu);
-    test_addr -= 1;
-
-    try std.testing.expect(cpu.reg.single.a == 0x1B);
-    try std.testing.expect(cpu.reg.get16(Register16.hl) == test_addr);
-}
-
-test "opcode INC8 - all registers" {
-    var cpu = Cpu.init();
-
-    // Test INC B (0x04)
-    cpu.reg.set8(.b, 0x0F);
-    OPCODES[0x04].execute(&cpu);
-    try std.testing.expect(cpu.reg.get8(.b) == 0x10);
-    try std.testing.expect(cpu.reg.single.f.z == false);
-    try std.testing.expect(cpu.reg.single.f.n == false);
-    try std.testing.expect(cpu.reg.single.f.h == true); // Half carry from 0x0F to 0x10
-
-    // Test INC C (0x0C)
-    cpu.reg.set8(.c, 0xFF);
-    OPCODES[0x0C].execute(&cpu);
-    try std.testing.expect(cpu.reg.get8(.c) == 0x00);
-    try std.testing.expect(cpu.reg.single.f.z == true);
-    try std.testing.expect(cpu.reg.single.f.h == true);
-
-    // Test INC D (0x14)
-    cpu.reg.set8(.d, 0x42);
-    OPCODES[0x14].execute(&cpu);
-    try std.testing.expect(cpu.reg.get8(.d) == 0x43);
-    try std.testing.expect(cpu.reg.single.f.z == false);
-    try std.testing.expect(cpu.reg.single.f.h == false);
-
-    // Test INC E (0x1C)
-    cpu.reg.set8(.e, 0x1F);
-    OPCODES[0x1C].execute(&cpu);
-    try std.testing.expect(cpu.reg.get8(.e) == 0x20);
-    try std.testing.expect(cpu.reg.single.f.h == true);
-
-    // Test INC H (0x24)
-    cpu.reg.set8(.h, 0x00);
-    OPCODES[0x24].execute(&cpu);
-    try std.testing.expect(cpu.reg.get8(.h) == 0x01);
-    try std.testing.expect(cpu.reg.single.f.z == false);
-
-    // Test INC L (0x2C)
-    cpu.reg.set8(.l, 0xFE);
-    OPCODES[0x2C].execute(&cpu);
-    try std.testing.expect(cpu.reg.get8(.l) == 0xFF);
-
-    // Test INC A (0x3C)
-    cpu.reg.set8(.a, 0x7F);
-    OPCODES[0x3C].execute(&cpu);
-    try std.testing.expect(cpu.reg.get8(.a) == 0x80);
-}
-
-test "opcode DEC8 - all registers" {
-    var cpu = Cpu.init();
-
-    // Test DEC B (0x05)
-    cpu.reg.set8(.b, 0x01);
-    OPCODES[0x05].execute(&cpu);
-    try std.testing.expect(cpu.reg.get8(.b) == 0x00);
-    try std.testing.expect(cpu.reg.single.f.z == true);
-    try std.testing.expect(cpu.reg.single.f.n == true);
-    try std.testing.expect(cpu.reg.single.f.h == false);
-
-    // Test DEC C (0x0D) - underflow
-    cpu.reg.set8(.c, 0x00);
-    OPCODES[0x0D].execute(&cpu);
-    try std.testing.expect(cpu.reg.get8(.c) == 0xFF);
-    try std.testing.expect(cpu.reg.single.f.z == false);
-    try std.testing.expect(cpu.reg.single.f.h == true);
-
-    // Test DEC D (0x15) - half borrow
-    cpu.reg.set8(.d, 0x10);
-    OPCODES[0x15].execute(&cpu);
-    try std.testing.expect(cpu.reg.get8(.d) == 0x0F);
-    try std.testing.expect(cpu.reg.single.f.h == true);
-
-    // Test DEC E (0x1D)
-    cpu.reg.set8(.e, 0x42);
-    OPCODES[0x1D].execute(&cpu);
-    try std.testing.expect(cpu.reg.get8(.e) == 0x41);
-    try std.testing.expect(cpu.reg.single.f.h == false);
-
-    // Test DEC H (0x25)
-    cpu.reg.set8(.h, 0x80);
-    OPCODES[0x25].execute(&cpu);
-    try std.testing.expect(cpu.reg.get8(.h) == 0x7F);
-
-    // Test DEC L (0x2D)
-    cpu.reg.set8(.l, 0x20);
-    OPCODES[0x2D].execute(&cpu);
-    try std.testing.expect(cpu.reg.get8(.l) == 0x1F);
-
-    // Test DEC A (0x3D)
-    cpu.reg.set8(.a, 0x01);
-    OPCODES[0x3D].execute(&cpu);
-    try std.testing.expect(cpu.reg.get8(.a) == 0x00);
-    try std.testing.expect(cpu.reg.single.f.z == true);
-}
-
-test "opcode INC16 - all registers" {
-    var cpu = Cpu.init();
-
-    // Test INC BC (0x03)
-    cpu.reg.set16(.bc, 0x1234);
-    OPCODES[0x03].execute(&cpu);
-    try std.testing.expect(cpu.reg.get16(.bc) == 0x1235);
-
-    // Test INC DE (0x13)
-    cpu.reg.set16(.de, 0xFFFF);
-    OPCODES[0x13].execute(&cpu);
-    try std.testing.expect(cpu.reg.get16(.de) == 0x0000);
-
-    // Test INC HL (0x23)
-    cpu.reg.set16(.hl, 0x00FF);
-    OPCODES[0x23].execute(&cpu);
-    try std.testing.expect(cpu.reg.get16(.hl) == 0x0100);
-
-    // Test INC SP (0x33)
-    cpu.reg.set16(.sp, 0xFFFE);
-    OPCODES[0x33].execute(&cpu);
-    try std.testing.expect(cpu.reg.get16(.sp) == 0xFFFF);
-}
-
-test "opcode DEC16 - all registers" {
-    var cpu = Cpu.init();
-
-    // Test DEC BC (0x0B)
-    cpu.reg.set16(.bc, 0x1000);
-    OPCODES[0x0B].execute(&cpu);
-    try std.testing.expect(cpu.reg.get16(.bc) == 0x0FFF);
-
-    // Test DEC DE (0x1B)
-    cpu.reg.set16(.de, 0x0000);
-    OPCODES[0x1B].execute(&cpu);
-    try std.testing.expect(cpu.reg.get16(.de) == 0xFFFF);
-
-    // Test DEC HL (0x2B)
-    cpu.reg.set16(.hl, 0x0100);
-    OPCODES[0x2B].execute(&cpu);
-    try std.testing.expect(cpu.reg.get16(.hl) == 0x00FF);
-
-    // Test DEC SP (0x3B)
-    cpu.reg.set16(.sp, 0x0001);
-    OPCODES[0x3B].execute(&cpu);
-    try std.testing.expect(cpu.reg.get16(.sp) == 0x0000);
-}
-
-test "opcode LD - register to register combinations" {
-    var cpu = Cpu.init();
-
-    // Set initial values
-    cpu.reg.set8(.a, 0xAA);
-    cpu.reg.set8(.b, 0xBB);
-    cpu.reg.set8(.c, 0xCC);
-    cpu.reg.set8(.d, 0xDD);
-    cpu.reg.set8(.e, 0xEE);
-    cpu.reg.set8(.h, 0x11);
-    cpu.reg.set8(.l, 0x22);
-
-    // Test LD B, C (0x41)
-    OPCODES[0x41].execute(&cpu);
-    try std.testing.expect(cpu.reg.get8(.b) == 0xCC);
-
-    // Test LD D, E (0x53)
-    OPCODES[0x53].execute(&cpu);
-    try std.testing.expect(cpu.reg.get8(.d) == 0xEE);
-
-    // Test LD H, A (0x67)
-    OPCODES[0x67].execute(&cpu);
-    try std.testing.expect(cpu.reg.get8(.h) == 0xAA);
-
-    // Test LD A, L (0x7D)
-    OPCODES[0x7D].execute(&cpu);
-    try std.testing.expect(cpu.reg.get8(.a) == 0x22);
-
-    // Test LD C, H (0x4C)
-    OPCODES[0x4C].execute(&cpu);
-    try std.testing.expect(cpu.reg.get8(.c) == 0xAA);
-}
-
-test "opcode LD - memory operations" {
-    var cpu = Cpu.init();
-
-    const addr: u16 = 0x5000;
-
-    // Test LD (BC), A (0x02)
-    cpu.reg.set16(.bc, addr);
-    cpu.reg.set8(.a, 0x12);
-    OPCODES[0x02].execute(&cpu);
-    try std.testing.expect(cpu.ram.readByte(addr) == 0x12);
-
-    // Test LD A, (BC) (0x0A)
-    cpu.reg.set8(.a, 0x00);
-    OPCODES[0x0A].execute(&cpu);
-    try std.testing.expect(cpu.reg.get8(.a) == 0x12);
-
-    // Test LD (DE), A (0x12)
-    cpu.reg.set16(.de, addr + 1);
-    cpu.reg.set8(.a, 0x34);
-    OPCODES[0x12].execute(&cpu);
-    try std.testing.expect(cpu.ram.readByte(addr + 1) == 0x34);
-
-    // Test LD A, (DE) (0x1A)
-    cpu.reg.set8(.a, 0x00);
-    OPCODES[0x1A].execute(&cpu);
-    try std.testing.expect(cpu.reg.get8(.a) == 0x34);
-
-    // Test LD (HL), various registers
-    cpu.reg.set16(.hl, addr + 2);
-    cpu.reg.set8(.b, 0x56);
-    OPCODES[0x70].execute(&cpu); // LD (HL), B
-    try std.testing.expect(cpu.ram.readByte(addr + 2) == 0x56);
-
-    cpu.reg.set8(.c, 0x78);
-    OPCODES[0x71].execute(&cpu); // LD (HL), C
-    try std.testing.expect(cpu.ram.readByte(addr + 2) == 0x78);
-
-    // Test LD various registers, (HL)
-    cpu.ram.writeByte(addr + 3, 0x9A);
-    cpu.reg.set16(.hl, addr + 3);
-
-    OPCODES[0x46].execute(&cpu); // LD B, (HL)
-    try std.testing.expect(cpu.reg.get8(.b) == 0x9A);
-
-    OPCODES[0x4E].execute(&cpu); // LD C, (HL)
-    try std.testing.expect(cpu.reg.get8(.c) == 0x9A);
-
-    OPCODES[0x56].execute(&cpu); // LD D, (HL)
-    try std.testing.expect(cpu.reg.get8(.d) == 0x9A);
-}
-
-test "opcode LD - increment/decrement operations" {
-    var cpu = Cpu.init();
-
-    const base_addr: u16 = 0x6000;
-
-    // Setup memory
-    cpu.ram.writeByte(base_addr, 0x11);
-    cpu.ram.writeByte(base_addr + 1, 0x22);
-    cpu.ram.writeByte(base_addr + 2, 0x33);
-    cpu.ram.writeByte(base_addr - 1, 0x00);
-
-    // Test LD (HL+), A (0x22)
-    cpu.reg.set16(.hl, base_addr);
-    cpu.reg.set8(.a, 0xAA);
-    OPCODES[0x22].execute(&cpu);
-    try std.testing.expect(cpu.ram.readByte(base_addr) == 0xAA);
-    try std.testing.expect(cpu.reg.get16(.hl) == base_addr + 1);
-
-    // Test LD A, (HL+) (0x2A)
-    cpu.reg.set16(.hl, base_addr + 1);
-    OPCODES[0x2A].execute(&cpu);
-    try std.testing.expect(cpu.reg.get8(.a) == 0x22);
-    try std.testing.expect(cpu.reg.get16(.hl) == base_addr + 2);
-
-    // Test LD (HL-), A (0x32)
-    cpu.reg.set8(.a, 0xBB);
-    OPCODES[0x32].execute(&cpu);
-    try std.testing.expect(cpu.ram.readByte(base_addr + 2) == 0xBB);
-    try std.testing.expect(cpu.reg.get16(.hl) == base_addr + 1);
-
-    // Test LD A, (HL-) (0x3A)
-    OPCODES[0x3A].execute(&cpu);
-    try std.testing.expect(cpu.reg.get8(.a) == 0x22);
-    try std.testing.expect(cpu.reg.get16(.hl) == base_addr);
-}
-
-test "opcode cycles metadata" {
-    // Verify cycle counts are correct
-    try std.testing.expect(OPCODES[0x00].metadata.cycles == 1); // NOP
-    try std.testing.expect(OPCODES[0x04].metadata.cycles == 1); // INC B
-    try std.testing.expect(OPCODES[0x03].metadata.cycles == 2); // INC BC
-    try std.testing.expect(OPCODES[0x34].metadata.cycles == 3); // INC (HL)
-    try std.testing.expect(OPCODES[0x47].metadata.cycles == 1); // LD B, A
-    try std.testing.expect(OPCODES[0x46].metadata.cycles == 2); // LD B, (HL)
-    try std.testing.expect(OPCODES[0x70].metadata.cycles == 2); // LD (HL), B
-    try std.testing.expect(OPCODES[0x2A].metadata.cycles == 2); // LD A, (HL+)
-    try std.testing.expect(OPCODES[0x22].metadata.cycles == 2); // LD (HL+), A
-    try std.testing.expect(OPCODES[0x36].metadata.cycles == 3); // LD (HL), d8
-    try std.testing.expect(OPCODES[0x31].metadata.cycles == 3); // LD SP, d16
-    try std.testing.expect(OPCODES[0x08].metadata.cycles == 5); // LD (d16), SP
-
-}
-
-test "opcode flags - zero flag" {
-    var cpu = Cpu.init();
-
-    // INC setting zero flag
-    cpu.reg.set8(.b, 0xFF);
-    OPCODES[0x04].execute(&cpu); // INC B
-    try std.testing.expect(cpu.reg.single.f.z == true);
-
-    // INC clearing zero flag
-    OPCODES[0x04].execute(&cpu); // INC B again
-    try std.testing.expect(cpu.reg.single.f.z == false);
-
-    // DEC setting zero flag
-    cpu.reg.set8(.c, 0x01);
-    OPCODES[0x0D].execute(&cpu); // DEC C
-    try std.testing.expect(cpu.reg.single.f.z == true);
-
-    // DEC clearing zero flag
-    OPCODES[0x0D].execute(&cpu); // DEC C again
-    try std.testing.expect(cpu.reg.single.f.z == false);
-}
-
-test "opcode flags - half carry/borrow" {
-    var cpu = Cpu.init();
-
-    // INC half carry tests
-    cpu.reg.set8(.b, 0x0F);
-    OPCODES[0x04].execute(&cpu); // INC B
-    try std.testing.expect(cpu.reg.single.f.h == true);
-
-    cpu.reg.set8(.b, 0x10);
-    OPCODES[0x04].execute(&cpu); // INC B
-    try std.testing.expect(cpu.reg.single.f.h == false);
-
-    cpu.reg.set8(.b, 0xFF);
-    OPCODES[0x04].execute(&cpu); // INC B
-    try std.testing.expect(cpu.reg.single.f.h == true);
-
-    // DEC half borrow tests
-    cpu.reg.set8(.c, 0x10);
-    OPCODES[0x0D].execute(&cpu); // DEC C
-    try std.testing.expect(cpu.reg.single.f.h == true);
-
-    cpu.reg.set8(.c, 0x0F);
-    OPCODES[0x0D].execute(&cpu); // DEC C
-    try std.testing.expect(cpu.reg.single.f.h == false);
-
-    cpu.reg.set8(.c, 0x00);
-    OPCODES[0x0D].execute(&cpu); // DEC C
-    try std.testing.expect(cpu.reg.single.f.h == true);
-}
-
-test "opcode flags - N flag" {
-    var cpu = Cpu.init();
-
-    // INC should clear N flag
-    cpu.reg.set8(.b, 0x42);
-    cpu.reg.single.f.n = true;
-    OPCODES[0x04].execute(&cpu); // INC B
-    try std.testing.expect(cpu.reg.single.f.n == false);
-
-    // DEC should set N flag
-    cpu.reg.set8(.c, 0x42);
-    OPCODES[0x0D].execute(&cpu); // DEC C
-    try std.testing.expect(cpu.reg.single.f.n == true);
-}
-
-test "opcode F8 - LD HL, SP + i8" {
-    var cpu = Cpu.init();
-
-    cpu.reg.set16(.sp, 0xFFF8);
-    cpu.ram.writeByte(0x0000, 0x08); // i8 = 8
-    cpu.reg.set16(.pc, 0x0000);
-
-    OPCODES[0xF8].execute(&cpu); // LD HL, SP + i8
-
-    try std.testing.expect(cpu.reg.pair.hl == 0x0000); // 0xFFF8 + 8 = 0x0000 (wrap around)
-
-    // => Now test with negative offset
-    // -8 =>
-
-    cpu.ram.writeByte(0x0001, 0xF8); // i8 = -8
-    cpu.reg.pair.sp = 0x00_FF; // 255
-
-    try std.testing.expect(cpu.reg.pair.pc == 0x0001);
-    OPCODES[0xF8].execute(&cpu); // LD HL, SP + i8
-
-    try std.testing.expect(cpu.reg.pair.hl == 0x00_F7); // 0x00_FF - 0x00_08 = 0x00_F7 => no carry, no half carry
-
-    // Check flags
-    try std.testing.expect(cpu.reg.single.f.z == false);
-    try std.testing.expect(cpu.reg.single.f.n == false);
-    try std.testing.expect(cpu.reg.single.f.h == false);
-    try std.testing.expect(cpu.reg.single.f.c == false);
-
-    cpu.ram.writeByte(0x0002, 0xF8); // i8 = -8
-    cpu.reg.pair.sp = 0x0F_00;
-
-    try std.testing.expect(cpu.reg.pair.pc == 0x0002);
-    OPCODES[0xF8].execute(&cpu); // LD HL, SP + i8
-
-    try std.testing.expect(cpu.reg.pair.hl == 0x0E_F8); // 0x0F_00 - 0x00_08 = 0x0E_F8
-
-    // Check flags
-    try std.testing.expect(cpu.reg.single.f.z == false);
-    try std.testing.expect(cpu.reg.single.f.n == false);
-    try std.testing.expect(cpu.reg.single.f.h == false);
-    try std.testing.expect(cpu.reg.single.f.c == false);
-}

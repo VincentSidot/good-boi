@@ -33,8 +33,13 @@ pub const Cpu = struct {
 test {
     const std = @import("std");
 
-    std.testing.refAllDecls(register);
-    std.testing.refAllDecls(instruction);
-    std.testing.refAllDecls(math);
-    std.testing.refAllDecls(ram);
+    const registerTest = @import("tests/register.zig");
+    const instructionTest = @import("tests/instruction.zig");
+    const mathTest = @import("tests/math.zig");
+    const ramTest = @import("tests/ram.zig");
+
+    std.testing.refAllDecls(registerTest);
+    std.testing.refAllDecls(instructionTest);
+    std.testing.refAllDecls(mathTest);
+    std.testing.refAllDecls(ramTest);
 }
