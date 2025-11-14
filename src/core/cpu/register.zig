@@ -1,6 +1,10 @@
 const builtin = @import("builtin");
 const std = @import("std");
 
+const memory = @import("./memory.zig");
+
+const STACK_START: u16 = memory.Memory.STACK_START;
+
 comptime {
     // Sanity: Flags must be exactly one byte
     if (@sizeOf(Flags) != 1) @compileError("Flags must be 1 byte.");
@@ -40,7 +44,7 @@ const Pairs = packed struct {
     de: u16 = 0,
     hl: u16 = 0,
 
-    sp: u16 = 0,
+    sp: u16 = STACK_START,
     pc: u16 = 0,
 };
 

@@ -3,6 +3,8 @@ const RAM_SIZE = 0x10000; // 64KB
 pub const Memory = struct {
     memory: [RAM_SIZE]u8 = undefined,
 
+    pub const STACK_START: u16 = 0xFFFE;
+
     pub fn init() Memory {
         return Memory{
             .memory = [_]u8{0} ** RAM_SIZE,

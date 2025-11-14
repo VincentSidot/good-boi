@@ -3,7 +3,7 @@ const utils = @import("../../utils.zig");
 const cpuZig = @import("../cpu.zig");
 const math = @import("math.zig");
 const register = @import("./register.zig");
-const ram = @import("./ram.zig");
+const memory = @import("./memory.zig");
 
 const Cpu = cpuZig.Cpu;
 
@@ -12,15 +12,14 @@ const Register8 = register.Register8;
 const Register16 = register.Register16;
 const Register16Memory = register.Register16Memory;
 
-const Memory = ram.Memory;
+const Memory = memory.Memory;
 
 const InstructionMetadata = struct {
     name: []const u8, // Name of the instruction
-    cycles: u8, // Number of cycles the instruction takes
 };
 
 const Instruction = struct {
-    execute: *const fn (cpu: *Cpu) void,
+    execute: *const fn (cpu: *Cpu) u8,
     metadata: InstructionMetadata,
 };
 
@@ -30,8 +29,9 @@ fn Unimplemented(comptime code: u8) Instruction {
     const nameFmt = std.fmt.comptimePrint("UNIMPLEMENTED(0x{X:02})", .{code});
 
     const inner = struct {
-        fn logger(_: *Cpu) void {
+        fn logger(_: *Cpu) u8 {
             utils.log.warn(logFmt, .{});
+            return 0;
         }
     };
 
@@ -39,7 +39,6 @@ fn Unimplemented(comptime code: u8) Instruction {
         .execute = inner.logger,
         .metadata = InstructionMetadata{
             .name = nameFmt,
-            .cycles = 0,
         },
     };
 }
@@ -61,7 +60,7 @@ fn getMemory(comptime postOp: fn (u16) callconv(.@"inline") u16) fn (*Cpu, Regis
                 cpu.reg.set16(reg.asReg16(), new_address);
             }
 
-            return cpu.ram.readByte(address);
+            return cpu.mem.readByte(address);
         }
     };
 
@@ -94,7 +93,7 @@ fn setMemory(comptime postOp: fn (u16) callconv(.@"inline") u16) fn (*Cpu, Regis
                 const new_address = postOp(address);
                 cpu.reg.set16(reg.asReg16(), new_address);
             }
-            cpu.ram.writeByte(address, value);
+            cpu.mem.writeByte(address, value);
         }
     };
 
@@ -348,49 +347,104 @@ fn regAsText(reg: anytype) []const u8 {
 }
 
 const op = struct {
-    fn nop_00(cpu: *Cpu) void {
+    fn nop_00(cpu: *Cpu) u8 {
         _ = cpu; // unused
+        return 1;
     }
 
-    fn ld_e0(cpu: *Cpu) void {
+    fn ld_e0(cpu: *Cpu) u8 {
         const offset = cpu.fetch();
         const addr = 0xFF00 + @as(u16, offset);
 
         const value = cpu.reg.single.a;
-        cpu.ram.writeByte(addr, value);
+        cpu.mem.writeByte(addr, value);
+
+        return 3;
     }
 
-    fn ld_f0(cpu: *Cpu) void {
+    fn ld_f0(cpu: *Cpu) u8 {
         const offset = cpu.fetch();
         const addr = 0xFF00 + @as(u16, offset);
 
-        const value = cpu.ram.readByte(addr);
+        const value = cpu.mem.readByte(addr);
         cpu.reg.single.a = value;
+
+        return 3;
     }
 
-    fn ld_08(cpu: *Cpu) void {
+    fn ld_e2(cpu: *Cpu) u8 {
+        const addr = 0xFF00 + @as(u16, cpu.reg.single.c);
+        const value = cpu.reg.single.a;
+
+        cpu.mem.writeByte(addr, value);
+
+        return 2;
+    }
+
+    fn ld_f2(cpu: *Cpu) u8 {
+        const addr = 0xFF00 + @as(u16, cpu.reg.single.c);
+        const value = cpu.mem.readByte(addr);
+
+        cpu.reg.single.a = value;
+
+        return 2;
+    }
+
+    fn ld_08(cpu: *Cpu) u8 {
         const addr = cpu.fetch16();
         const valueSplit = math.splitBytes(cpu.reg.pair.sp);
 
-        cpu.ram.writeByte(addr, valueSplit.low);
-        cpu.ram.writeByte(addr + 1, valueSplit.high);
+        cpu.mem.writeByte(addr, valueSplit.low);
+        cpu.mem.writeByte(addr + 1, valueSplit.high);
+
+        return 5;
     }
 
-    fn ld_e2(cpu: *Cpu) void {
-        const addr = 0xFF00 + @as(u16, cpu.reg.single.c);
+    fn ld_f8(cpu: *Cpu) u8 {
+
+        // Treat immediate values as i8
+        var offset: u16 = @intCast(cpu.fetch());
+        // Sign extend to 16 bits if negative
+        if (offset & 0x00_80 != 0) {
+            offset = 0xFF_00 | offset;
+        }
+
+        const sp = cpu.reg.pair.sp;
+
+        const value = math.checkCarryAdd(u16, sp, offset);
+
+        // Flags: 00HC
+        var flags = cpu.reg.single.f;
+        flags.z = false;
+        flags.n = false;
+        flags.h = value.halfCarry;
+        flags.c = value.carry;
+
+        // Set registers
+        cpu.reg.pair.hl = value.value;
+
+        return 3;
+    }
+
+    fn ld_ea(cpu: *Cpu) u8 {
+        const addr = cpu.fetch16();
         const value = cpu.reg.single.a;
 
-        cpu.ram.writeByte(addr, value);
+        cpu.mem.writeByte(addr, value);
+
+        return 4;
     }
 
-    fn ld_f2(cpu: *Cpu) void {
-        const addr = 0xFF00 + @as(u16, cpu.reg.single.c);
-        const value = cpu.ram.readByte(addr);
+    fn ld_fa(cpu: *Cpu) u8 {
+        const addr = cpu.fetch16();
+        const value = cpu.mem.readByte(addr);
 
         cpu.reg.single.a = value;
+
+        return 4;
     }
 
-    fn add_e8(cpu: *Cpu) void {
+    fn add_e8(cpu: *Cpu) u8 {
 
         // Treat immediate values as i8
         var offset: u16 = @intCast(cpu.fetch());
@@ -413,44 +467,8 @@ const op = struct {
 
         // Set registers
         cpu.reg.pair.sp = value.value;
-    }
 
-    fn ld_f8(cpu: *Cpu) void {
-
-        // Treat immediate values as i8
-        var offset: u16 = @intCast(cpu.fetch());
-        // Sign extend to 16 bits if negative
-        if (offset & 0x00_80 != 0) {
-            offset = 0xFF_00 | offset;
-        }
-
-        const sp = cpu.reg.pair.sp;
-
-        const value = math.checkCarryAdd(u16, sp, offset);
-
-        // Flags: 00HC
-        var flags = cpu.reg.single.f;
-        flags.z = false;
-        flags.n = false;
-        flags.h = value.halfCarry;
-        flags.c = value.carry;
-
-        // Set registers
-        cpu.reg.pair.hl = value.value;
-    }
-
-    fn ld_ea(cpu: *Cpu) void {
-        const addr = cpu.fetch16();
-        const value = cpu.reg.single.a;
-
-        cpu.ram.writeByte(addr, value);
-    }
-
-    fn ld_fa(cpu: *Cpu) void {
-        const addr = cpu.fetch16();
-        const value = cpu.ram.readByte(addr);
-
-        cpu.reg.single.a = value;
+        return 4;
     }
 
     fn inc(comptime reg: anytype) Instruction {
@@ -469,7 +487,7 @@ const op = struct {
         };
 
         const _inline = struct {
-            fn execute(cpu: *Cpu) void {
+            fn execute(cpu: *Cpu) u8 {
                 const value = getFn(cpu, reg);
 
                 const result = math.checkCarryAdd(targetInt, value, 1);
@@ -486,11 +504,12 @@ const op = struct {
                 }
 
                 setFn(cpu, reg, result.value);
+
+                return cycles;
             }
         };
 
         return .{ .execute = _inline.execute, .metadata = .{
-            .cycles = cycles,
             .name = std.fmt.comptimePrint("INC {s}", .{regAsText(reg)}),
         } };
     }
@@ -511,7 +530,7 @@ const op = struct {
         };
 
         const _inline = struct {
-            fn execute(cpu: *Cpu) void {
+            fn execute(cpu: *Cpu) u8 {
                 const value = getFn(cpu, reg);
 
                 const result = math.checkBorrowSub(targetInt, value, 1);
@@ -528,11 +547,12 @@ const op = struct {
                 }
 
                 setFn(cpu, reg, result.value);
+
+                return cycles;
             }
         };
 
         return .{ .execute = _inline.execute, .metadata = .{
-            .cycles = cycles,
             .name = std.fmt.comptimePrint("DEC {s}", .{regAsText(reg)}),
         } };
     }
@@ -566,19 +586,19 @@ const op = struct {
         const cycle = cycleSrc + cycleDst; // Tiny hack because cycles are 1 or 2.
 
         const _inline = struct {
-            fn execute(cpu: *Cpu) void {
+            fn execute(cpu: *Cpu) u8 {
                 const value = getSrc(cpu, sourceReg);
                 setDst(cpu, destReg, value);
 
                 // Flags ----
 
+                return cycle;
             }
         };
 
         return .{
             .execute = _inline.execute,
             .metadata = .{
-                .cycles = cycle,
                 .name = std.fmt.comptimePrint(
                     "LD {s}, {s}",
                     .{ regAsText(destReg), regAsText(sourceReg) },
@@ -600,7 +620,7 @@ const op = struct {
         };
 
         const _inline = struct {
-            fn execute(cpu: *Cpu) void {
+            fn execute(cpu: *Cpu) u8 {
                 const destValue = cpu.reg.get8(dest);
                 const sourceValue = getSrc(cpu, source);
 
@@ -615,13 +635,14 @@ const op = struct {
                 cpu.reg.single.f = flags;
 
                 cpu.reg.set8(dest, result);
+
+                return cycles;
             }
         };
 
         return .{
             .execute = _inline.execute,
             .metadata = .{
-                .cycles = cycles,
                 .name = std.fmt.comptimePrint(
                     "{s} {s}, {s}",
                     .{ ops.asText(), regAsText(dest), regAsText(source) },
@@ -661,7 +682,7 @@ const op = struct {
         };
 
         const _inline = struct {
-            fn execute(cpu: *Cpu) void {
+            fn execute(cpu: *Cpu) u8 {
                 const destValue = getDst(cpu, dest);
                 const sourceValue = getSrc(cpu, source);
 
@@ -677,13 +698,14 @@ const op = struct {
                 cpu.reg.single.f = flags;
 
                 if (ops != .CP) setDst(cpu, dest, res.value); // Do not store result if CP
+
+                return cycles;
             }
         };
 
         return .{
             .execute = _inline.execute,
             .metadata = .{
-                .cycles = cycles,
                 .name = std.fmt.comptimePrint(
                     "{s} {s}, {s}",
                     .{ ops.asText(), regAsText(dest), regAsText(source) },
@@ -697,17 +719,16 @@ const _NOP_00: Instruction = .{
     .execute = op.nop_00,
     .metadata = InstructionMetadata{
         .name = "NOP",
-        .cycles = 1,
     },
 };
 
 const __LD_E0: Instruction = .{
     .execute = op.ld_e0,
-    .metadata = .{ .name = "LDH (FF00 + u8), A", .cycles = 3 },
+    .metadata = .{ .name = "LDH (FF00 + u8), A" },
 };
 const __LD_F0: Instruction = .{
     .execute = op.ld_f0,
-    .metadata = .{ .name = "LDH A, (FF00 + u8)", .cycles = 3 },
+    .metadata = .{ .name = "LDH A, (FF00 + u8)" },
 };
 
 const __LD_01: Instruction = op.load(R16.bc, IM16{});
@@ -722,11 +743,11 @@ const __LD_32: Instruction = op.load(RMO.hl_dec, R8.a);
 
 const __LD_E2: Instruction = .{
     .execute = op.ld_e2,
-    .metadata = .{ .name = "LD (FF00 + C), A", .cycles = 2 },
+    .metadata = .{ .name = "LD (FF00 + C), A" },
 };
 const __LD_F2: Instruction = .{
     .execute = op.ld_f2,
-    .metadata = .{ .name = "LD A, (FF00 + C)", .cycles = 2 },
+    .metadata = .{ .name = "LD A, (FF00 + C)" },
 };
 
 const _INC_03: Instruction = op.inc(R16.bc);
@@ -752,10 +773,7 @@ const __LD_36: Instruction = op.load(RM.hl, IM8{});
 // const __LD_08: Instruction = op.load(IMM16{}, R16.sp);
 const __LD_08: Instruction = .{
     .execute = op.ld_08,
-    .metadata = .{
-        .name = "LD (u16), SP",
-        .cycles = 5,
-    },
+    .metadata = .{ .name = "LD (u16), SP" },
 };
 
 const __LD_0A: Instruction = op.load(R8.a, RM.bc);
@@ -830,7 +848,7 @@ const __LD_78: Instruction = op.load(R8.a, R8.b);
 
 const __LD_F8: Instruction = .{
     .execute = op.ld_f8,
-    .metadata = .{ .name = "LD HL, SP + i8", .cycles = 3 },
+    .metadata = .{ .name = "LD HL, SP + i8" },
 };
 
 const __LD_49: Instruction = op.load(R8.c, R8.c);
@@ -847,11 +865,11 @@ const __LD_7A: Instruction = op.load(R8.a, R8.d);
 
 const __LD_EA: Instruction = .{
     .execute = op.ld_ea,
-    .metadata = .{ .name = "LD (a16), A", .cycles = 4 },
+    .metadata = .{ .name = "LD (a16), A" },
 };
 const __LD_FA: Instruction = .{
     .execute = op.ld_fa,
-    .metadata = .{ .name = "LD A. (u16)", .cycles = 4 },
+    .metadata = .{ .name = "LD A. (u16)" },
 };
 
 const __LD_4B: Instruction = op.load(R8.c, R8.e);
@@ -896,10 +914,7 @@ const _ADD_87: Instruction = op.arithmetic(.ADD, R8.a, R8.a);
 
 const _ADD_E8: Instruction = .{
     .execute = op.add_e8,
-    .metadata = .{
-        .name = "ADD SP, i8",
-        .cycles = 4,
-    },
+    .metadata = .{ .name = "ADD SP, i8" },
 };
 
 const _ADC_88: Instruction = op.arithmetic(.ADC, R8.a, R8.b);
