@@ -1244,3 +1244,7 @@ pub const OPCODES: [256]Instruction = .{
     __LD_E0, _POP_E1, __LD_E2, U(0xE3), U(0xE4), PUSH_E5, _AND_E6, _RST_E7, _ADD_E8, __JP_E9, __LD_EA, U(0xEB), U(0xEC), U(0xED), _XOR_EE, _RST_EF, // 0xE0
     __LD_F0, _POP_F1, __LD_F2, U(0xF3), U(0xF4), PUSH_F5, __OR_F6, _RST_F7, __LD_F8, __LD_F9, __LD_FA, U(0xFB), U(0xFC), U(0xFD), __CP_FE, _RST_FF, // 0xF0
 };
+
+pub inline fn getOpcode(opcode: u8) Instruction {
+    return OPCODES[opcode];
+}

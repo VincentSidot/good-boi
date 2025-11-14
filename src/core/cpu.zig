@@ -1,3 +1,5 @@
+const utils = @import("../utils.zig");
+
 const register = @import("./cpu/register.zig");
 const instruction = @import("./cpu/instruction.zig");
 const math = @import("./cpu/math.zig");
@@ -64,6 +66,14 @@ pub const Cpu = struct {
 
     pub fn setPC(self: *Cpu, address: u16) void {
         self.reg.pair.pc = address;
+    }
+
+    /// Executes a single CPU step and returns the number of cycles taken.
+    pub fn step(self: *Cpu) u8 {
+        const opcode = self.fetch();
+        const inst = instruction.getOpcode(opcode);
+        utils.log.debug("0x{X:4}: {s}", .{ self.reg.pair.pc - 1, inst.metadata.name });
+        return inst.execute(self);
     }
 };
 
