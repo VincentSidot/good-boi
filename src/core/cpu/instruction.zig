@@ -86,8 +86,12 @@ inline fn getRelative(cpu: *Cpu, _: IM8) u16 {
     return pc +% offset; // Allow wrapping around address space to handle negative offsets
 }
 
-inline fn getRet(cpu: *Cpu, _: RET) u16 {
-    return cpu.pop();
+inline fn getRet(cpu: *Cpu, opt: RET) u16 {
+    if (opt.flags.asFn()(cpu.reg.single.f)) {
+        return cpu.pop();
+    } else {
+        return undefined; // This would not be used
+    }
 }
 
 inline fn getRst(comptime addr: u16) fn (*Cpu, _: RST) callconv(.@"inline") u16 {
@@ -827,9 +831,27 @@ const op = struct {
                     if (reg.isCall) std.fmt.comptimePrint("CALL{s}", .{reg.flags.asText()}) else std.fmt.comptimePrint("JP{s}", .{reg.flags.asText()}),
                     reg.isCall,
                 },
-                RST => break :blk .{ FlagsOps.Always, getRst(reg.addr), 4, std.fmt.comptimePrint("RST {X:02}h", .{reg.addr}), false },
-                RET => break :blk .{ reg.flags, getRet, 3, std.fmt.comptimePrint("RET{s}", .{reg.flags.asText()}), false },
-                R16 => break :blk .{ FlagsOps.Always, getReg16, 1, "JP", false },
+                RST => break :blk .{
+                    FlagsOps.Always,
+                    getRst(reg.addr),
+                    2, // isCall is true so it adds 2 cycles (and it could not be conditional) => maybe too much tricky?
+                    std.fmt.comptimePrint("RST {X:02}h", .{reg.addr}),
+                    true,
+                },
+                RET => break :blk .{
+                    reg.flags,
+                    getRet,
+                    if (reg.flags == .Always) 2 else 3,
+                    std.fmt.comptimePrint("RET{s}", .{reg.flags.asText()}),
+                    false,
+                },
+                R16 => break :blk .{
+                    FlagsOps.Always,
+                    getReg16,
+                    1,
+                    "JP",
+                    false,
+                },
                 else => @compileError("reg must be of type IM8, IM16, R16, RST, or RET"),
             }
         };
@@ -839,11 +861,11 @@ const op = struct {
                 const addr = getAddr(cpu, reg);
 
                 if (condition.asFn()(cpu.reg.single.f)) {
-                    if (!isCall) {
+                    if (isCall) {
                         cpu.push(cpu.reg.pair.pc);
                     }
                     cpu.setPC(addr);
-                    return cycles + (if (isCall or T == void) 2 else 0);
+                    return cycles + (if (isCall or T == RET) 2 else 0);
                 } else {
                     return cycles - 1;
                 }
