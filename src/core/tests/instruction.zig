@@ -18,13 +18,11 @@ test "opcode NOP" {
 test "opcode unimplemented" {
     var cpu: Cpu = .{};
 
-    const opcode = OPCODES[0xC3]; // This should stays unimplemented
+    const opcode = OPCODES[0xD3]; // This should stays unimplemented
     const cycles = opcode.execute(&cpu);
     try std.testing.expect(cycles == 0);
 
-    std.debug.print("Opcode name: {s}\n", .{opcode.metadata.name});
-
-    try std.testing.expectEqualStrings(opcode.metadata.name, "UNIMPLEMENTED(0xC3)");
+    try std.testing.expectEqualStrings(opcode.metadata.name, "UNIMPLEMENTED(0xD3)");
 }
 
 test "opcode INC16" {

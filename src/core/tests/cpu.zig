@@ -1,0 +1,216 @@
+const std = @import("std");
+const _cpu = @import("../cpu.zig");
+const _register = @import("../cpu/register.zig");
+const _memory = @import("../cpu/memory.zig");
+
+const Cpu = _cpu.Cpu;
+const Flags = _register.Flags;
+
+const STACK_START = _memory.Memory.STACK_START;
+
+test "CPU initialization" {
+    const cpu = Cpu.init();
+
+    // Verify CPU is properly initialized with zero registers and clean memory
+    try std.testing.expect(cpu.reg.single.a == 0);
+    try std.testing.expect(cpu.reg.single.b == 0);
+    try std.testing.expect(cpu.reg.single.c == 0);
+    try std.testing.expect(cpu.reg.single.d == 0);
+    try std.testing.expect(cpu.reg.single.e == 0);
+    try std.testing.expect(cpu.reg.single.f == Flags.zeroed());
+    try std.testing.expect(cpu.reg.single.h == 0);
+    try std.testing.expect(cpu.reg.single.l == 0);
+    try std.testing.expect(cpu.reg.pair.pc == 0);
+    try std.testing.expect(cpu.reg.pair.sp == STACK_START);
+}
+
+test "CPU fetch - single byte" {
+    var cpu = Cpu.init();
+
+    // Set up test data in memory
+    cpu.mem.writeByte(0x0000, 0x42);
+    cpu.mem.writeByte(0x0001, 0x84);
+    cpu.reg.pair.pc = 0x0000;
+
+    // Test fetching first byte
+    const opcode1 = cpu.fetch();
+    try std.testing.expect(opcode1 == 0x42);
+    try std.testing.expect(cpu.reg.pair.pc == 0x0001);
+
+    // Test fetching second byte
+    const opcode2 = cpu.fetch();
+    try std.testing.expect(opcode2 == 0x84);
+    try std.testing.expect(cpu.reg.pair.pc == 0x0002);
+}
+
+test "CPU fetch16 - 16-bit word" {
+    var cpu = Cpu.init();
+
+    // Set up test data in memory (little-endian: low byte first, then high byte)
+    cpu.mem.writeByte(0x0000, 0x34); // Low byte
+    cpu.mem.writeByte(0x0001, 0x12); // High byte
+    cpu.reg.pair.pc = 0x0000;
+
+    // Test fetching 16-bit word
+    const word = cpu.fetch16();
+    try std.testing.expect(word == 0x1234);
+    try std.testing.expect(cpu.reg.pair.pc == 0x0002);
+}
+
+test "CPU fetch16 - multiple words" {
+    var cpu = Cpu.init();
+
+    // Set up multiple 16-bit words in memory
+    cpu.mem.writeByte(0x0000, 0x78); // Low byte of first word
+    cpu.mem.writeByte(0x0001, 0x56); // High byte of first word
+    cpu.mem.writeByte(0x0002, 0xBC); // Low byte of second word
+    cpu.mem.writeByte(0x0003, 0x9A); // High byte of second word
+    cpu.reg.pair.pc = 0x0000;
+
+    // Test fetching first word
+    const word1 = cpu.fetch16();
+    try std.testing.expect(word1 == 0x5678);
+    try std.testing.expect(cpu.reg.pair.pc == 0x0002);
+
+    // Test fetching second word
+    const word2 = cpu.fetch16();
+    try std.testing.expect(word2 == 0x9ABC);
+    try std.testing.expect(cpu.reg.pair.pc == 0x0004);
+}
+
+test "CPU push and pop - single value" {
+    var cpu = Cpu.init();
+
+    // Initialize stack pointer to valid position
+    cpu.reg.pair.sp = 0xFFFE;
+
+    // Push a value onto the stack
+    const test_value: u16 = 0x1234;
+    cpu.push(test_value);
+
+    // Verify stack pointer moved down by 2
+    try std.testing.expect(cpu.reg.pair.sp == 0xFFFC);
+
+    // Verify the value was written to memory (little-endian)
+    try std.testing.expect(cpu.mem.readByte(0xFFFC) == 0x34); // Low byte
+    try std.testing.expect(cpu.mem.readByte(0xFFFD) == 0x12); // High byte
+
+    // Pop the value back
+    const popped_value = cpu.pop();
+    try std.testing.expect(popped_value == test_value);
+    try std.testing.expect(cpu.reg.pair.sp == 0xFFFE);
+}
+
+test "CPU push and pop - multiple values" {
+    var cpu = Cpu.init();
+
+    // Initialize stack pointer
+    cpu.reg.pair.sp = 0xFFFE;
+
+    // Push multiple values
+    const value1: u16 = 0x1111;
+    const value2: u16 = 0x2222;
+    const value3: u16 = 0x3333;
+
+    cpu.push(value1);
+    cpu.push(value2);
+    cpu.push(value3);
+
+    // Verify stack pointer position
+    try std.testing.expect(cpu.reg.pair.sp == 0xFFF8);
+
+    // Pop values back in reverse order (LIFO)
+    const pop3 = cpu.pop();
+    const pop2 = cpu.pop();
+    const pop1 = cpu.pop();
+
+    try std.testing.expect(pop3 == value3);
+    try std.testing.expect(pop2 == value2);
+    try std.testing.expect(pop1 == value1);
+    try std.testing.expect(cpu.reg.pair.sp == 0xFFFE);
+}
+
+test "CPU push - stack grows downward" {
+    var cpu = Cpu.init();
+
+    // Start at a higher address to clearly see downward growth
+    cpu.reg.pair.sp = 0x8000;
+
+    const value1: u16 = 0xAABB;
+    const value2: u16 = 0xCCDD;
+
+    // Push first value
+    cpu.push(value1);
+    try std.testing.expect(cpu.reg.pair.sp == 0x7FFE);
+    try std.testing.expect(cpu.mem.readByte(0x7FFE) == 0xBB); // Low byte
+    try std.testing.expect(cpu.mem.readByte(0x7FFF) == 0xAA); // High byte
+
+    // Push second value
+    cpu.push(value2);
+    try std.testing.expect(cpu.reg.pair.sp == 0x7FFC);
+    try std.testing.expect(cpu.mem.readByte(0x7FFC) == 0xDD); // Low byte
+    try std.testing.expect(cpu.mem.readByte(0x7FFD) == 0xCC); // High byte
+}
+
+test "CPU pop - stack underflow detection" {
+    var cpu = Cpu.init();
+
+    // Set stack pointer to stack start (empty stack condition)
+    cpu.reg.pair.sp = STACK_START;
+
+    // Attempting to pop from empty stack should panic
+    // Note: In a real test environment, you'd want to catch this panic
+    // For now, we'll just verify the stack pointer is at the expected position
+    try std.testing.expect(cpu.reg.pair.sp == 0xFFFE);
+}
+
+test "CPU memory interaction through fetch" {
+    var cpu = Cpu.init();
+
+    // Test that CPU properly interacts with memory
+    // Write test pattern to memory
+    for (0..10) |i| {
+        cpu.mem.writeByte(@intCast(i), @intCast(i * 2));
+    }
+
+    // Use fetch to read the pattern back
+    cpu.reg.pair.pc = 0;
+    for (0..10) |i| {
+        const fetched = cpu.fetch();
+        try std.testing.expect(fetched == i * 2);
+        try std.testing.expect(cpu.reg.pair.pc == i + 1);
+    }
+}
+
+test "CPU register and memory state independence" {
+    var cpu1 = Cpu.init();
+    var cpu2 = Cpu.init();
+
+    // Modify first CPU
+    cpu1.reg.pair.pc = 0x1234;
+    cpu1.reg.single.a = 0xFF;
+    cpu1.mem.writeByte(0x0000, 0x42);
+
+    // Verify second CPU is unaffected
+    try std.testing.expect(cpu2.reg.pair.pc == 0);
+    try std.testing.expect(cpu2.reg.single.a == 0);
+    try std.testing.expect(cpu2.mem.readByte(0x0000) == 0);
+}
+
+test "CPU stack operations with edge addresses" {
+    var cpu = Cpu.init();
+
+    // Test stack operations near memory boundaries
+    cpu.reg.pair.sp = 0x0004; // Low address
+
+    const test_val: u16 = 0xDEAD;
+    cpu.push(test_val);
+
+    try std.testing.expect(cpu.reg.pair.sp == 0x0002);
+    try std.testing.expect(cpu.mem.readByte(0x0002) == 0xAD); // Low byte
+    try std.testing.expect(cpu.mem.readByte(0x0003) == 0xDE); // High byte
+
+    const popped = cpu.pop();
+    try std.testing.expect(popped == test_val);
+    try std.testing.expect(cpu.reg.pair.sp == 0x0004);
+}

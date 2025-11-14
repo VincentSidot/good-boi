@@ -15,6 +15,10 @@ pub const Cpu = struct {
     }
 
     pub fn fetch(self: *Cpu) u8 {
+        if (self.reg.pair.pc == Memory.RAM_SIZE - 1) {
+            @panic("Program counter out of bounds");
+        }
+
         const opcode = self.mem.readByte(self.reg.pair.pc);
         self.reg.pair.pc += 1;
 
@@ -32,6 +36,8 @@ pub const Cpu = struct {
     pub fn pop(self: *Cpu) u16 {
         if (self.reg.pair.sp == Memory.STACK_START) {
             @panic("Stack underflow");
+        } else if (self.reg.pair.sp + 1 >= Memory.STACK_START) {
+            @panic("Stack overflow");
         }
         defer {
             self.reg.pair.sp += 2;
@@ -46,10 +52,18 @@ pub const Cpu = struct {
     pub fn push(self: *Cpu, value: u16) void {
         self.reg.pair.sp -= 2;
 
-        const valueSplit = math.splitWord(value);
+        const valueSplit = math.splitBytes(value);
 
         self.mem.writeByte(self.reg.pair.sp, valueSplit.low);
         self.mem.writeByte(self.reg.pair.sp + 1, valueSplit.high);
+    }
+
+    pub fn getPC(self: *const Cpu) u16 {
+        return self.reg.pair.pc;
+    }
+
+    pub fn setPC(self: *Cpu, address: u16) void {
+        self.reg.pair.pc = address;
     }
 };
 
@@ -60,9 +74,11 @@ test {
     const instructionTest = @import("tests/instruction.zig");
     const mathTest = @import("tests/math.zig");
     const memoryTest = @import("tests/memory.zig");
+    const cpuTest = @import("tests/cpu.zig");
 
     std.testing.refAllDecls(registerTest);
     std.testing.refAllDecls(instructionTest);
     std.testing.refAllDecls(mathTest);
     std.testing.refAllDecls(memoryTest);
+    std.testing.refAllDecls(cpuTest);
 }

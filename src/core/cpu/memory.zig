@@ -1,9 +1,8 @@
-const RAM_SIZE = 0x10000; // 64KB
-
 pub const Memory = struct {
-    memory: [RAM_SIZE]u8 = undefined,
-
+    pub const RAM_SIZE = 0x10000; // 64KB
     pub const STACK_START: u16 = 0xFFFE;
+
+    memory: [RAM_SIZE]u8 = undefined,
 
     pub fn init() Memory {
         return Memory{

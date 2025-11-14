@@ -89,6 +89,14 @@ pub inline fn splitBytes(value: u16) struct {
     };
 }
 
+pub inline fn asSignedOnU16(value: u8) u16 {
+    var offset: u16 = @intCast(value);
+    if (value & 0x00_80 != 0) {
+        offset |= 0xFF_00;
+    }
+    return offset;
+}
+
 test "mergeBytes - basic combinations" {
     const std = @import("std");
 
