@@ -264,7 +264,7 @@ test "FIB First steps" {
     std.log.debug("Completed {d} steps", .{i});
 
     // Values should be located at memory address 0xB000
-    const TARGET_FIB_COUNT: u16 = 11;
+    const TARGET_FIB_COUNT: u16 = 11; // Read the 10 first Fibonacci numbers
     const address: u16 = 0xB000;
     var offset: u16 = 2;
 

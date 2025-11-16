@@ -1,3 +1,6 @@
 .zig-cache
 zig-out
+
 trash.zig
+
+output.zig.merged

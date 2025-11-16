@@ -1,6 +1,5 @@
 ;; Simple fibonacci program to test the cpu.
 
-
 ;; 0x0000 -> Main entry point
 NOP                         ; 0x00 No operation (just a placeholder)
 LD HL, 0x0002               ; 0x21 Load i = 0 into BC
