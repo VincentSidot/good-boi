@@ -72,8 +72,10 @@ pub const Cpu = struct {
     pub fn step(self: *Cpu) u8 {
         const opcode = self.fetch();
         const inst = instruction.getOpcode(opcode);
-        utils.log.debug("0x{X:4}: {s}", .{ self.reg.pair.pc - 1, inst.metadata.name });
-        return inst.execute(self);
+        utils.log.debug("0x{X:04}: {s}", .{ self.reg.pair.pc - 1, inst.metadata.name });
+        const cycle = inst.execute(self);
+
+        return cycle;
     }
 };
 

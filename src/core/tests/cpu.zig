@@ -8,6 +8,30 @@ const Flags = _register.Flags;
 
 const STACK_START = _memory.Memory.STACK_START;
 
+/// Load a binary file into CPU memory at the specified start address
+fn loadFileIntoMemory(cpu: *Cpu, path: []const u8, startAddress: u16) !void {
+    const file = try std.fs.cwd().openFile(
+        path,
+        .{},
+    );
+    defer file.close();
+
+    const fileSize = try file.getEndPos();
+    const fullSize: u64 = @as(u64, @intCast(startAddress)) + fileSize;
+    if (fullSize > _memory.Memory.RAM_SIZE) {
+        return error.FileTooLarge;
+    }
+
+    const beginIndex: usize = @intCast(startAddress);
+    const endIndex: usize = @intCast(fullSize);
+
+    const idx = cpu.mem.memory[beginIndex..endIndex];
+
+    _ = try file.read(idx);
+
+    return;
+}
+
 test "CPU initialization" {
     const cpu = Cpu.init();
 
@@ -213,4 +237,48 @@ test "CPU stack operations with edge addresses" {
     const popped = cpu.pop();
     try std.testing.expect(popped == test_val);
     try std.testing.expect(cpu.reg.pair.sp == 0x0004);
+}
+
+test "FIB First steps" {
+    const MAX_STEP_COUNT = 10_000;
+    const OP_HALT: u8 = 0x76;
+
+    var cpu = Cpu.init();
+
+    // Print current working directory for debugging
+    try loadFileIntoMemory(&cpu, "./bin/fib.gb", 0x0000);
+
+    // Verify that the first few bytes are loaded correctly
+    try std.testing.expect(cpu.mem.readByte(0x0000) == 0x00); // NOP
+    try std.testing.expect(cpu.mem.readByte(0x0001) == 0x21);
+    try std.testing.expect(cpu.mem.readByte(0x0010) == 0xE5);
+
+    std.log.debug("Running few CPU steps...", .{});
+
+    // Let's play few CPU steps
+    var i: usize = 0;
+    while (i < MAX_STEP_COUNT and cpu.mem.readByte(cpu.getPC()) != OP_HALT) : (i += 1) {
+        _ = cpu.step();
+    }
+
+    std.log.debug("Completed {d} steps", .{i});
+
+    // Values should be located at memory address 0xB000
+    const TARGET_FIB_COUNT: u16 = 11;
+    const address: u16 = 0xB000;
+    var offset: u16 = 2;
+
+    var fib_n_1: u8 = 1;
+    var fib_n: u8 = 2;
+
+    while (offset < TARGET_FIB_COUNT) : (offset += 1) {
+        const value = cpu.mem.readByte(address + offset);
+
+        std.log.debug("FIB[{d}] = {d} | Expected = {d}", .{ offset, value, fib_n });
+        try std.testing.expect(value == fib_n);
+
+        const next_fib = fib_n + fib_n_1;
+        fib_n_1 = fib_n;
+        fib_n = next_fib;
+    }
 }

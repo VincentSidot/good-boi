@@ -149,7 +149,7 @@ const RegisterMemoryOperation = enum {
         comptime {
             const reg16 = reg.asReg16();
             return std.fmt.comptimePrint("({s}{s})", .{
-                reg16.asText(),
+                regAsText(reg16),
                 op_char,
             });
         }
@@ -673,7 +673,7 @@ const op = struct {
             .metadata = .{
                 .name = std.fmt.comptimePrint(
                     "LD {s}, {s}",
-                    .{ regAsText(destReg), regAsText(sourceReg) },
+                    .{ regAsText(dest), regAsText(source) },
                 ),
             },
         };

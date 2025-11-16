@@ -5,6 +5,7 @@ pub const Memory = struct {
     memory: [RAM_SIZE]u8 = undefined,
 
     pub fn init() Memory {
+        // Return zeroed memory
         return Memory{
             .memory = [_]u8{0} ** RAM_SIZE,
         };
