@@ -1,7 +1,7 @@
 ; Simple GameBoy Assembly Test File
 ; This file tests basic CPU instructions
 
-    NOP                    ; 0x00
+    NOP                   ; 0x00
     LD B, 0x42            ; 0x06 0x42  
     LD C, $FF             ; 0x0E 0xFF
     INC B                 ; 0x04

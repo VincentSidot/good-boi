@@ -14,6 +14,15 @@ const INSTRUCTIONS = [_]Instruction{
     .{ .mnemonic = "NOP", .opcode = 0x00, .operands = 0 },
 
     // Load instructions
+    .{ .mnemonic = "LD A, B", .opcode = 0x78, .operands = 0 },
+    .{ .mnemonic = "LD A, C", .opcode = 0x79, .operands = 0 },
+    .{ .mnemonic = "LD A, D", .opcode = 0x7A, .operands = 0 },
+    .{ .mnemonic = "LD A, E", .opcode = 0x7B, .operands = 0 },
+    .{ .mnemonic = "LD A, H", .opcode = 0x7C, .operands = 0 },
+    .{ .mnemonic = "LD A, L", .opcode = 0x7D, .operands = 0 },
+    .{ .mnemonic = "LD A, (HL)", .opcode = 0x7E, .operands = 0 },
+    .{ .mnemonic = "LD A, A", .opcode = 0x7F, .operands = 0 },
+
     .{ .mnemonic = "LD BC,", .opcode = 0x01, .operands = 2 },
     .{ .mnemonic = "LD DE,", .opcode = 0x11, .operands = 2 },
     .{ .mnemonic = "LD HL,", .opcode = 0x21, .operands = 2 },
@@ -26,15 +35,6 @@ const INSTRUCTIONS = [_]Instruction{
     .{ .mnemonic = "LD H,", .opcode = 0x26, .operands = 1 },
     .{ .mnemonic = "LD L,", .opcode = 0x2E, .operands = 1 },
     .{ .mnemonic = "LD A,", .opcode = 0x3E, .operands = 1 },
-
-    .{ .mnemonic = "LD A,B", .opcode = 0x78, .operands = 0 },
-    .{ .mnemonic = "LD A,C", .opcode = 0x79, .operands = 0 },
-    .{ .mnemonic = "LD A,D", .opcode = 0x7A, .operands = 0 },
-    .{ .mnemonic = "LD A,E", .opcode = 0x7B, .operands = 0 },
-    .{ .mnemonic = "LD A,H", .opcode = 0x7C, .operands = 0 },
-    .{ .mnemonic = "LD A,L", .opcode = 0x7D, .operands = 0 },
-    .{ .mnemonic = "LD A,(HL)", .opcode = 0x7E, .operands = 0 },
-    .{ .mnemonic = "LD A,A", .opcode = 0x7F, .operands = 0 },
 
     // INC/DEC instructions
     .{ .mnemonic = "INC BC", .opcode = 0x03, .operands = 0 },
@@ -61,27 +61,28 @@ const INSTRUCTIONS = [_]Instruction{
     .{ .mnemonic = "DEC (HL)", .opcode = 0x35, .operands = 0 },
 
     // Arithmetic instructions
-    .{ .mnemonic = "ADD A,B", .opcode = 0x80, .operands = 0 },
-    .{ .mnemonic = "ADD A,C", .opcode = 0x81, .operands = 0 },
-    .{ .mnemonic = "ADD A,D", .opcode = 0x82, .operands = 0 },
-    .{ .mnemonic = "ADD A,E", .opcode = 0x83, .operands = 0 },
-    .{ .mnemonic = "ADD A,H", .opcode = 0x84, .operands = 0 },
-    .{ .mnemonic = "ADD A,L", .opcode = 0x85, .operands = 0 },
-    .{ .mnemonic = "ADD A,(HL)", .opcode = 0x86, .operands = 0 },
-    .{ .mnemonic = "ADD A,A", .opcode = 0x87, .operands = 0 },
+    .{ .mnemonic = "ADD A, B", .opcode = 0x80, .operands = 0 },
+    .{ .mnemonic = "ADD A, C", .opcode = 0x81, .operands = 0 },
+    .{ .mnemonic = "ADD A, D", .opcode = 0x82, .operands = 0 },
+    .{ .mnemonic = "ADD A, E", .opcode = 0x83, .operands = 0 },
+    .{ .mnemonic = "ADD A, H", .opcode = 0x84, .operands = 0 },
+    .{ .mnemonic = "ADD A, L", .opcode = 0x85, .operands = 0 },
+    .{ .mnemonic = "ADD A, (HL)", .opcode = 0x86, .operands = 0 },
+    .{ .mnemonic = "ADD A, A", .opcode = 0x87, .operands = 0 },
     .{ .mnemonic = "ADD A,", .opcode = 0xC6, .operands = 1 },
 
     // Jump instructions
-    .{ .mnemonic = "JP", .opcode = 0xC3, .operands = 2 },
     .{ .mnemonic = "JP NZ,", .opcode = 0xC2, .operands = 2 },
     .{ .mnemonic = "JP Z,", .opcode = 0xCA, .operands = 2 },
     .{ .mnemonic = "JP NC,", .opcode = 0xD2, .operands = 2 },
     .{ .mnemonic = "JP C,", .opcode = 0xDA, .operands = 2 },
-    .{ .mnemonic = "JR", .opcode = 0x18, .operands = 1 },
+    .{ .mnemonic = "JP", .opcode = 0xC3, .operands = 2 },
+
     .{ .mnemonic = "JR NZ,", .opcode = 0x20, .operands = 1 },
     .{ .mnemonic = "JR Z,", .opcode = 0x28, .operands = 1 },
     .{ .mnemonic = "JR NC,", .opcode = 0x30, .operands = 1 },
     .{ .mnemonic = "JR C,", .opcode = 0x38, .operands = 1 },
+    .{ .mnemonic = "JR", .opcode = 0x18, .operands = 1 },
 
     // Call/Return instructions
     .{ .mnemonic = "CALL", .opcode = 0xCD, .operands = 2 },
@@ -92,6 +93,7 @@ const INSTRUCTIONS = [_]Instruction{
     .{ .mnemonic = "PUSH DE", .opcode = 0xD5, .operands = 0 },
     .{ .mnemonic = "PUSH HL", .opcode = 0xE5, .operands = 0 },
     .{ .mnemonic = "PUSH AF", .opcode = 0xF5, .operands = 0 },
+
     .{ .mnemonic = "POP BC", .opcode = 0xC1, .operands = 0 },
     .{ .mnemonic = "POP DE", .opcode = 0xD1, .operands = 0 },
     .{ .mnemonic = "POP HL", .opcode = 0xE1, .operands = 0 },
@@ -143,15 +145,42 @@ const Assembler = struct {
         return std.fmt.parseInt(u16, text, 10);
     }
 
-    fn trimWhitespace(text: []const u8) []const u8 {
-        const start = std.mem.indexOfAnyPos(u8, text, 0, " \t\n\r") orelse return text;
-        if (start > 0) return text[0..start];
+    fn trimComments(text: []const u8) []const u8 {
+        const end_index = std.mem.indexOfAnyPos(u8, text, 0, ";#") orelse text.len;
+        return text[0..end_index];
+    }
 
-        var i = start;
+    // Trim whitespace
+    fn trimLeadingWhiteSpace(text: []const u8) []const u8 {
+        var i: usize = 0;
         while (i < text.len and (text[i] == ' ' or text[i] == '\t' or text[i] == '\n' or text[i] == '\r')) {
             i += 1;
         }
         return text[i..];
+    }
+
+    // Trim trailing whitespace
+    fn trimTrailingWhiteSpace(text: []const u8) []const u8 {
+        if (text.len == 0) return text;
+
+        var end_index: usize = text.len - 1;
+        while (end_index > 0 and (text[end_index] == ' ' or text[end_index] == '\t' or text[end_index] == '\n' or text[end_index] == '\r')) {
+            end_index -= 1;
+        }
+
+        return text[0 .. end_index + 1];
+    }
+
+    fn trim(text: []const u8) []const u8 {
+        std.debug.print("Trimming text: '{s}'\n", .{text});
+        const result = Self.trimTrailingWhiteSpace(
+            Self.trimComments(
+                Self.trimLeadingWhiteSpace(text),
+            ),
+        );
+        std.debug.print("Result after trim: '{s}'\n", .{result});
+
+        return result;
     }
 
     fn findInstruction(mnemonic: []const u8) ?Instruction {
@@ -164,7 +193,8 @@ const Assembler = struct {
     }
 
     pub fn assembleLine(self: *Self, line: []const u8) !void {
-        const trimmed = self.trimWhitespace(line);
+        // Remove comments
+        const trimmed = Self.trim(line);
 
         // Skip empty lines and comments
         if (trimmed.len == 0 or trimmed[0] == ';' or trimmed[0] == '#') {
@@ -189,14 +219,14 @@ const Assembler = struct {
                 if (inst.operands > 0) {
                     const operand_start = inst.mnemonic.len;
                     if (operand_start < upper_line.len) {
-                        var operand_text = self.trimWhitespace(upper_line[operand_start..]);
+                        var operand_text = Self.trim(upper_line[operand_start..]);
 
                         // Remove trailing comma if present
                         if (operand_text.len > 0 and operand_text[operand_text.len - 1] == ',') {
                             operand_text = operand_text[0 .. operand_text.len - 1];
                         }
 
-                        const value = self.parseNumber(operand_text) catch |err| {
+                        const value = Self.parseNumber(operand_text) catch |err| {
                             std.debug.print("Error parsing number '{s}': {}\n", .{ operand_text, err });
                             return AssemblerError.InvalidNumber;
                         };
@@ -236,7 +266,12 @@ const Assembler = struct {
         defer self.allocator.free(content);
 
         // var lines = std.mem.split(u8, content, "\n");
-        var lines = std.mem.SplitIterator(u8, "\n");
+        const IteratorType = std.mem.SplitIterator(u8, .scalar);
+        var lines = IteratorType{
+            .buffer = content,
+            .delimiter = '\n',
+            .index = 0,
+        };
         while (lines.next()) |line| {
             try self.assembleLine(line);
         }
@@ -298,13 +333,13 @@ pub fn main() !void {
     // Print hex dump of output for verification
     const output = assembler.getOutput();
     if (output.len > 0) {
-        std.debug.print("\nHex dump:\n");
+        std.debug.print("\nHex dump:\n", .{});
         for (output, 0..) |byte, i| {
             if (i % 16 == 0) {
-                std.debug.print("\n{:04X}: ", .{i});
+                std.debug.print("\n{X:04}: ", .{i});
             }
-            std.debug.print("{:02X} ", .{byte});
+            std.debug.print("{X:02} ", .{byte});
         }
-        std.debug.print("\n");
+        std.debug.print("\n", .{});
     }
 }
