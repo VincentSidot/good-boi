@@ -9,11 +9,21 @@ const Registers = register.Registers;
 const Memory = memory.Memory;
 
 pub const Cpu = struct {
+    /// CPU Registers
     reg: Registers = Registers.zeroed(),
+    /// CPU Memory
     mem: Memory = Memory.init(),
+    /// Interrupts enabled flag
+    irqEnabled: bool,
+    /// CPU halted flag
+    halted: bool = false,
+    /// Total CPU cycles executed
+    cycles: u64 = 0,
 
     pub fn init() Cpu {
-        return Cpu{};
+        return Cpu{
+            .irqEnabled = false, // IRQs disabled on init (idk why)
+        };
     }
 
     pub fn fetch(self: *Cpu) u8 {
@@ -68,12 +78,26 @@ pub const Cpu = struct {
         self.reg.pair.pc = address;
     }
 
+    pub fn setIRQ(self: *Cpu, enabled: bool) void {
+        self.irqEnabled = enabled;
+    }
+
+    pub fn setHalted(self: *Cpu, halted: bool) void {
+        self.halted = halted;
+    }
+
     /// Executes a single CPU step and returns the number of cycles taken.
     pub fn step(self: *Cpu) u8 {
+        if (self.halted) {
+            @branchHint(.cold); // Halted state is uncommon during normal execution
+            return 0; // No cycles consumed when halted
+        }
+
         const opcode = self.fetch();
         const inst = instruction.getOpcode(opcode);
         utils.log.debug("0x{X:04}: {s}", .{ self.reg.pair.pc - 1, inst.metadata.name });
         const cycle = inst.execute(self);
+        self.cycles += @intCast(cycle);
 
         return cycle;
     }

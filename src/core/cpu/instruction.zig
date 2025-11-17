@@ -25,14 +25,19 @@ pub const Instruction = struct {
     metadata: InstructionMetadata,
 };
 
-fn Unimplemented(comptime code: u8) Instruction {
+fn Invalid(comptime code: u8) Instruction {
     @setEvalBranchQuota(200_000);
-    const logFmt = std.fmt.comptimePrint("Unimplemented instruction executed: 0x{X:02}", .{code});
-    const nameFmt = std.fmt.comptimePrint("UNIMPLEMENTED(0x{X:02})", .{code});
+    const logFmt = std.fmt.comptimePrint("Invalid instruction trying to be executed: 0x{X:02}", .{code});
+    const nameFmt = std.fmt.comptimePrint("INVALID(0x{X:02})", .{code});
 
     const inner = struct {
         fn logger(_: *Cpu) u8 {
-            utils.log.warn(logFmt, .{});
+            utils.log.err(logFmt, .{});
+
+            if (utils.CRASH_ON_INVALID) {
+                @panic("Crashing due to invalid instruction execution.");
+            }
+
             return 0;
         }
     };
@@ -428,11 +433,16 @@ pub fn regAsText(reg: anytype) []const u8 {
 }
 
 const op = struct {
+
+    // Custom Instructions
+
+    /// No Operation
     fn nop_00(cpu: *Cpu) u8 {
         _ = cpu; // unused
         return 1;
     }
 
+    /// Store A to address
     fn ld_e0(cpu: *Cpu) u8 {
         const offset = cpu.fetch();
         const addr = 0xFF00 + @as(u16, offset);
@@ -443,6 +453,7 @@ const op = struct {
         return 3;
     }
 
+    /// Load A from address
     fn ld_f0(cpu: *Cpu) u8 {
         const offset = cpu.fetch();
         const addr = 0xFF00 + @as(u16, offset);
@@ -453,6 +464,7 @@ const op = struct {
         return 3;
     }
 
+    /// Store A to address
     fn ld_e2(cpu: *Cpu) u8 {
         const addr = 0xFF00 + @as(u16, cpu.reg.single.c);
         const value = cpu.reg.single.a;
@@ -462,6 +474,7 @@ const op = struct {
         return 2;
     }
 
+    /// Load A from address
     fn ld_f2(cpu: *Cpu) u8 {
         const addr = 0xFF00 + @as(u16, cpu.reg.single.c);
         const value = cpu.mem.readByte(addr);
@@ -471,6 +484,7 @@ const op = struct {
         return 2;
     }
 
+    /// Store SP to address
     fn ld_08(cpu: *Cpu) u8 {
         const addr = cpu.fetch16();
         const valueSplit = math.splitBytes(cpu.reg.pair.sp);
@@ -481,6 +495,7 @@ const op = struct {
         return 5;
     }
 
+    /// Load HL with SP plus signed immediate
     fn ld_f8(cpu: *Cpu) u8 {
 
         // Treat immediate values as i8
@@ -503,6 +518,7 @@ const op = struct {
         return 3;
     }
 
+    /// Store A to address
     fn ld_ea(cpu: *Cpu) u8 {
         const addr = cpu.fetch16();
         const value = cpu.reg.single.a;
@@ -512,6 +528,7 @@ const op = struct {
         return 4;
     }
 
+    /// Load A from address
     fn ld_fa(cpu: *Cpu) u8 {
         const addr = cpu.fetch16();
         const value = cpu.mem.readByte(addr);
@@ -521,6 +538,7 @@ const op = struct {
         return 4;
     }
 
+    /// Add signed immediate to SP
     fn add_e8(cpu: *Cpu) u8 {
 
         // Treat immediate values as i8
@@ -544,11 +562,108 @@ const op = struct {
         return 4;
     }
 
+    /// Run extended instruction set
     fn pref_cb(cpu: *Cpu) u8 {
         const next_instruction = cpu.fetch();
         const instruction = OPCODES_EXT[next_instruction];
         return 1 + instruction.execute(cpu); // +1 for the CB prefix
     }
+
+    /// Set Carry Flag
+    fn scf_37(cpu: *Cpu) u8 {
+        cpu.reg.single.f.n = false;
+        cpu.reg.single.f.h = false;
+        cpu.reg.single.f.c = true;
+
+        return 1;
+    }
+
+    /// Complement all bits in A register
+    fn cpl_2f(cpu: *Cpu) u8 {
+        cpu.reg.single.a = ~cpu.reg.single.a; // Bitwise NOT
+
+        // Flags: -11-
+        cpu.reg.single.f.n = true;
+        cpu.reg.single.f.h = true;
+
+        return 1;
+    }
+
+    /// Complement Carry Flag
+    fn ccf_3f(cpu: *Cpu) u8 {
+        cpu.reg.single.f.n = false;
+        cpu.reg.single.f.h = false;
+        cpu.reg.single.f.c = !cpu.reg.single.f.c;
+
+        return 1;
+    }
+
+    /// Return from interrupt
+    fn reti_d9(cpu: *Cpu) u8 {
+        const addr = cpu.pop();
+        cpu.setPC(addr);
+        cpu.setIRQ(true);
+
+        return 4;
+    }
+
+    /// Disable interrupts
+    fn di_f3(cpu: *Cpu) u8 {
+        cpu.setIRQ(false);
+        return 1;
+    }
+
+    /// Enable interrupts
+    fn ei_fb(cpu: *Cpu) u8 {
+        cpu.setIRQ(true);
+        return 1;
+    }
+
+    /// Stop CPU
+    fn stop_10(cpu: *Cpu) u8 {
+        _ = cpu; // unused
+        return 1;
+    }
+
+    /// Halt CPU
+    fn halt_76(cpu: *Cpu) u8 {
+        cpu.halted = true;
+        return 1;
+    }
+
+    /// DAAAAAAAAAAAAA
+    fn daa_27(cpu: *Cpu) u8 {
+        var ia: i32 = @intCast(cpu.reg.single.a);
+
+        if (cpu.reg.single.f.n) {
+            if (cpu.reg.single.f.h) {
+                ia = (ia - 0x06) & 0xFF;
+            }
+            if (cpu.reg.single.f.c) {
+                ia -= 0x60;
+            }
+        } else {
+            if (cpu.reg.single.f.h or (ia & 0x0F) > 0x09) {
+                ia += 0x06;
+            }
+            if (cpu.reg.single.f.c or ia > 0x9F) {
+                ia += 0x60;
+            }
+        }
+
+        if ((ia & 0x100) == 0x100) {
+            cpu.reg.single.f.c = true;
+        }
+
+        const a: u8 = @intCast(ia & 0xFF);
+        cpu.reg.single.a = a;
+        cpu.reg.single.f.z = (a == 0);
+        cpu.reg.single.f.h = false;
+
+        return 1;
+    }
+
+    // Comptime Instructions builder
 
     fn inc(comptime reg: anytype) Instruction {
         const T = @TypeOf(reg);
@@ -892,6 +1007,31 @@ const op = struct {
             },
         };
     }
+
+    fn rotate(comptime ops: instructionExt.ExtendedOp) Instruction {
+        const _inline = struct {
+            fn execute(cpu: *Cpu) u8 {
+                const value = getReg8(cpu, .a);
+
+                const res = ops.getOperation()(value, cpu.reg.single.f);
+
+                for (ops.getFlagEffect()) |fe| {
+                    fe.handle(cpu, res.zero, res.carry);
+                }
+
+                setReg8(cpu, .a, res.value);
+
+                return 1; // They constantly take 1 cycle
+            }
+        };
+
+        return .{
+            .execute = _inline.execute,
+            .metadata = .{
+                .name = ops.asText(),
+            },
+        };
+    }
 };
 
 // NOP
@@ -1226,37 +1366,89 @@ const _RST_DF: Instruction = op.jmp(RST{ .addr = 0x18 });
 const _RST_EF: Instruction = op.jmp(RST{ .addr = 0x28 });
 const _RST_FF: Instruction = op.jmp(RST{ .addr = 0x38 });
 
-// Prefix CB opcodes
+// Prefix CB opcodes and rotates
 
 const PREF_CB: Instruction = .{
     .execute = op.pref_cb,
     .metadata = .{ .name = "PREFIX CB" },
 };
 
+const RLCA_07: Instruction = op.rotate(.rlca);
+const _RLA_17: Instruction = op.rotate(.rla);
+const RRCA_0F: Instruction = op.rotate(.rrca);
+const _RRA_1F: Instruction = op.rotate(.rra);
+
+// Last missing instructions
+
+const _SCF_37: Instruction = .{
+    .execute = op.scf_37,
+    .metadata = .{ .name = "SCF" },
+};
+
+const _CPL_2F: Instruction = .{
+    .execute = op.cpl_2f,
+    .metadata = .{ .name = "CPL" },
+};
+
+const _CCF_3F: Instruction = .{
+    .execute = op.ccf_3f,
+    .metadata = .{ .name = "CCF" },
+};
+
+const RETI_D9: Instruction = .{
+    .execute = op.reti_d9,
+    .metadata = .{ .name = "RETI" },
+};
+
+const __DI_F3: Instruction = .{
+    .execute = op.di_f3,
+    .metadata = .{ .name = "DI" },
+};
+
+const __EI_FB: Instruction = .{
+    .execute = op.ei_fb,
+    .metadata = .{ .name = "EI" },
+};
+
+const STOP_10: Instruction = .{
+    .execute = op.stop_10,
+    .metadata = .{ .name = "STOP" },
+};
+
+const HALT_76: Instruction = .{
+    .execute = op.halt_76,
+    .metadata = .{ .name = "HALT" },
+};
+
+const _DAA_27: Instruction = .{
+    .execute = op.daa_27,
+    .metadata = .{ .name = "DAA" },
+};
+
 // Unimplemented opcode placeholder
 
-const U = Unimplemented;
+const I = Invalid;
 
 // Opcode Table
 // From https://izik1.github.io/gbops/
 pub const OPCODES: [256]Instruction = .{
     //0x00,  0x01,    0x02,    0x03,    0x04,    0x05,    0x06,    0x07,    0x08,    0x09,    0x0A,    0x0B,    0x0C,    0x0D,    0x0E,    0x0F,
-    _NOP_00, __LD_01, __LD_02, _INC_03, _INC_04, _DEC_05, __LD_06, U(0x07), __LD_08, _ADD_09, __LD_0A, _DEC_0B, _INC_0C, _DEC_0D, __LD_0E, U(0x0F), // 0x00
-    U(0x10), __LD_11, __LD_12, _INC_13, _INC_14, _DEC_15, __LD_16, U(0x17), __JR_18, _ADD_19, __LD_1A, _DEC_1B, _INC_1C, _DEC_1D, __LD_1E, U(0x1F), // 0x10
-    __JR_20, __LD_21, __LD_22, _INC_23, _INC_24, _DEC_25, __LD_26, U(0x27), __JR_28, _ADD_29, __LD_2A, _DEC_2B, _INC_2C, _DEC_2D, __LD_2E, U(0x2F), // 0x20
-    __JR_30, __LD_31, __LD_32, _INC_33, _INC_34, _DEC_35, __LD_36, U(0x37), __JR_38, _ADD_39, __LD_3A, _DEC_3B, _INC_3C, _DEC_3D, __LD_3E, U(0x3F), // 0x30
+    _NOP_00, __LD_01, __LD_02, _INC_03, _INC_04, _DEC_05, __LD_06, RLCA_07, __LD_08, _ADD_09, __LD_0A, _DEC_0B, _INC_0C, _DEC_0D, __LD_0E, RRCA_0F, // 0x00
+    STOP_10, __LD_11, __LD_12, _INC_13, _INC_14, _DEC_15, __LD_16, _RLA_17, __JR_18, _ADD_19, __LD_1A, _DEC_1B, _INC_1C, _DEC_1D, __LD_1E, _RRA_1F, // 0x10
+    __JR_20, __LD_21, __LD_22, _INC_23, _INC_24, _DEC_25, __LD_26, _DAA_27, __JR_28, _ADD_29, __LD_2A, _DEC_2B, _INC_2C, _DEC_2D, __LD_2E, _CPL_2F, // 0x20
+    __JR_30, __LD_31, __LD_32, _INC_33, _INC_34, _DEC_35, __LD_36, _SCF_37, __JR_38, _ADD_39, __LD_3A, _DEC_3B, _INC_3C, _DEC_3D, __LD_3E, _CCF_3F, // 0x30
     __LD_40, __LD_41, __LD_42, __LD_43, __LD_44, __LD_45, __LD_46, __LD_47, __LD_48, __LD_49, __LD_4A, __LD_4B, __LD_4C, __LD_4D, __LD_4E, __LD_4F, // 0x40
     __LD_50, __LD_51, __LD_52, __LD_53, __LD_54, __LD_55, __LD_56, __LD_57, __LD_58, __LD_59, __LD_5A, __LD_5B, __LD_5C, __LD_5D, __LD_5E, __LD_5F, // 0x50
     __LD_60, __LD_61, __LD_62, __LD_63, __LD_64, __LD_65, __LD_66, __LD_67, __LD_68, __LD_69, __LD_6A, __LD_6B, __LD_6C, __LD_6D, __LD_6E, __LD_6F, // 0x60
-    __LD_70, __LD_71, __LD_72, __LD_73, __LD_74, __LD_75, U(0x76), __LD_77, __LD_78, __LD_79, __LD_7A, __LD_7B, __LD_7C, __LD_7D, __LD_7E, __LD_7F, // 0x70
+    __LD_70, __LD_71, __LD_72, __LD_73, __LD_74, __LD_75, HALT_76, __LD_77, __LD_78, __LD_79, __LD_7A, __LD_7B, __LD_7C, __LD_7D, __LD_7E, __LD_7F, // 0x70
     _ADD_80, _ADD_81, _ADD_82, _ADD_83, _ADD_84, _ADD_85, _ADD_86, _ADD_87, _ADC_88, _ADC_89, _ADC_8A, _ADC_8B, _ADC_8C, _ADC_8D, _ADC_8E, _ADC_8F, // 0x80
     _SUB_90, _SUB_91, _SUB_92, _SUB_93, _SUB_94, _SUB_95, _SUB_96, _SUB_97, _SBC_98, _SBC_99, _SBC_9A, _SBC_9B, _SBC_9C, _SBC_9D, _SBC_9E, _SBC_9F, // 0x90
     _AND_A0, _AND_A1, _AND_A2, _AND_A3, _AND_A4, _AND_A5, _AND_A6, _AND_A7, _XOR_A8, _XOR_A9, _XOR_AA, _XOR_AB, _XOR_AC, _XOR_AD, _XOR_AE, _XOR_AF, // 0xA0
     __OR_B0, __OR_B1, __OR_B2, __OR_B3, __OR_B4, __OR_B5, __OR_B6, __OR_B7, __CP_B8, __CP_B9, __CP_BA, __CP_BB, __CP_BC, __CP_BD, __CP_BE, __CP_BF, // 0xB0
     _RET_C0, _POP_C1, __JP_C2, __JP_C3, CALL_C4, PUSH_C5, _ADD_C6, _RST_C7, _RET_C8, _RET_C9, __JP_CA, PREF_CB, CALL_CC, CALL_CD, _ADC_CE, _RST_CF, // 0xC0
-    _RET_D0, _POP_D1, __JP_D2, U(0xD3), CALL_D4, PUSH_D5, _SUB_D6, _RST_D7, _RET_D8, U(0xD9), __JP_DA, U(0xDB), CALL_DC, U(0xDD), _SBC_DE, _RST_DF, // 0xD0
-    __LD_E0, _POP_E1, __LD_E2, U(0xE3), U(0xE4), PUSH_E5, _AND_E6, _RST_E7, _ADD_E8, __JP_E9, __LD_EA, U(0xEB), U(0xEC), U(0xED), _XOR_EE, _RST_EF, // 0xE0
-    __LD_F0, _POP_F1, __LD_F2, U(0xF3), U(0xF4), PUSH_F5, __OR_F6, _RST_F7, __LD_F8, __LD_F9, __LD_FA, U(0xFB), U(0xFC), U(0xFD), __CP_FE, _RST_FF, // 0xF0
+    _RET_D0, _POP_D1, __JP_D2, I(0xD3), CALL_D4, PUSH_D5, _SUB_D6, _RST_D7, _RET_D8, RETI_D9, __JP_DA, I(0xDB), CALL_DC, I(0xDD), _SBC_DE, _RST_DF, // 0xD0
+    __LD_E0, _POP_E1, __LD_E2, I(0xE3), I(0xE4), PUSH_E5, _AND_E6, _RST_E7, _ADD_E8, __JP_E9, __LD_EA, I(0xEB), I(0xEC), I(0xED), _XOR_EE, _RST_EF, // 0xE0
+    __LD_F0, _POP_F1, __LD_F2, __DI_F3, I(0xF4), PUSH_F5, __OR_F6, _RST_F7, __LD_F8, __LD_F9, __LD_FA, __EI_FB, I(0xFC), I(0xFD), __CP_FE, _RST_FF, // 0xF0
 };
 
 pub const OPCODES_EXT = instructionExt.OPCODES_EXT;

@@ -62,7 +62,7 @@ const FlagEffect = struct {
     flag: TargetFlag,
     operation: FlagsOperation,
 
-    inline fn handle(self: FlagEffect, cpu: *Cpu, zero: bool, carry: bool) void {
+    pub inline fn handle(self: FlagEffect, cpu: *Cpu, zero: bool, carry: bool) void {
         switch (self.operation) {
             .set => TargetFlag.set(self.flag, cpu, true),
             .clear => TargetFlag.set(self.flag, cpu, false),
@@ -82,9 +82,10 @@ const FlagEffect = struct {
     }
 };
 
-const ExtendedOp = union(enum) {
+pub const ExtendedOp = union(enum) {
     const OPTS = buildOptsTable();
 
+    // Extended operations
     rlc: void,
     rrc: void,
     rl: void,
@@ -96,6 +97,12 @@ const ExtendedOp = union(enum) {
     bit: u3,
     res: u3,
     set: u3,
+
+    // NonExtended rotate operations
+    rlca: void,
+    rla: void,
+    rrca: void,
+    rra: void,
 
     fn buildOptsTable() [32]ExtendedOp {
         var table: [32]ExtendedOp = undefined;
@@ -133,7 +140,7 @@ const ExtendedOp = union(enum) {
         return table;
     }
 
-    fn asText(comptime self: ExtendedOp) []const u8 {
+    pub fn asText(comptime self: ExtendedOp) []const u8 {
         switch (self) {
             .rlc => return "RLC",
             .rrc => return "RRC",
@@ -152,10 +159,14 @@ const ExtendedOp = union(enum) {
             .set => |bitPos| {
                 return std.fmt.comptimePrint("SET {d},", .{bitPos});
             },
+            .rlca => return "RLCA",
+            .rla => return "RLA",
+            .rrca => return "RRCA",
+            .rra => return "RRA",
         }
     }
 
-    fn getOperation(comptime self: ExtendedOp) fn (u8, Flags) callconv(.@"inline") OperationResult {
+    pub fn getOperation(comptime self: ExtendedOp) fn (u8, Flags) callconv(.@"inline") OperationResult {
         const _inline = struct {
             inline fn swap(value: u8, _: Flags) OperationResult {
                 const res = (value << 4) | (value >> 4);
@@ -167,10 +178,10 @@ const ExtendedOp = union(enum) {
         };
 
         switch (self) {
-            .rlc => return rotateFactory(true, true),
-            .rrc => return rotateFactory(false, true),
-            .rl => return rotateFactory(true, false),
-            .rr => return rotateFactory(false, false),
+            .rlc, .rlca => return rotateFactory(true, true),
+            .rrc, .rrca => return rotateFactory(false, true),
+            .rl, .rla => return rotateFactory(true, false),
+            .rr, .rra => return rotateFactory(false, false),
             .sla => return shiftFactory(true, false), // no arithmetic for left shift
             .sra => return shiftFactory(false, true),
             .swap => return _inline.swap,
@@ -194,7 +205,7 @@ const ExtendedOp = union(enum) {
         }
     }
 
-    fn getFlagEffect(comptime self: ExtendedOp) [4]FlagEffect {
+    pub fn getFlagEffect(comptime self: ExtendedOp) [4]FlagEffect {
         switch (self) {
             .rlc,
             .rrc,
@@ -226,6 +237,12 @@ const ExtendedOp = union(enum) {
                 .{ .flag = .n, .operation = .ignore },
                 .{ .flag = .h, .operation = .ignore },
                 .{ .flag = .c, .operation = .ignore },
+            },
+            .rlca, .rla, .rrca, .rra => return .{
+                .{ .flag = .z, .operation = .clear },
+                .{ .flag = .n, .operation = .clear },
+                .{ .flag = .h, .operation = .clear },
+                .{ .flag = .c, .operation = .depends },
             },
         }
     }

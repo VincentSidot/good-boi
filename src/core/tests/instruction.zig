@@ -9,29 +9,15 @@ const OPCODES = @import("../cpu/instruction.zig").OPCODES;
 const OPCODES_EXT = @import("../cpu/instructionExt.zig").OPCODES_EXT;
 
 test "opcode NOP" {
-    var cpu: Cpu = .{};
+    var cpu = Cpu.init();
 
     const opcode = OPCODES[0x00];
     const cycles = opcode.execute(&cpu);
     try std.testing.expect(cycles == 1);
 }
 
-test "opcode unimplemented" {
-    const logLevel = std.testing.log_level;
-    defer std.testing.log_level = logLevel;
-    std.testing.log_level = .err; // Avoid spamming
-
-    var cpu: Cpu = .{};
-
-    const opcode = OPCODES[0xD3]; // This should stays unimplemented
-    const cycles = opcode.execute(&cpu);
-    try std.testing.expect(cycles == 0);
-
-    try std.testing.expectEqualStrings(opcode.metadata.name, "UNIMPLEMENTED(0xD3)");
-}
-
 test "opcode INC16" {
-    var cpu: Cpu = .{};
+    var cpu = Cpu.init();
     cpu.reg.set16(.bc, 0xFFFF);
 
     const opcode = OPCODES[0x03]; // INC BC
@@ -46,7 +32,7 @@ test "opcode INC16" {
 }
 
 test "opcode INC Memory" {
-    var cpu: Cpu = .{};
+    var cpu = Cpu.init();
 
     const addr: u16 = 0x2000;
 
