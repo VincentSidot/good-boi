@@ -4,6 +4,7 @@ const cpuZig = @import("../cpu.zig");
 const math = @import("math.zig");
 const register = @import("./register.zig");
 const memory = @import("./memory.zig");
+const instructionExt = @import("./instructionExt.zig");
 
 const Cpu = cpuZig.Cpu;
 
@@ -541,6 +542,12 @@ const op = struct {
         cpu.reg.pair.sp = value.value;
 
         return 4;
+    }
+
+    fn pref_cb(cpu: *Cpu) u8 {
+        const next_instruction = cpu.fetch();
+        const instruction = OPCODES_EXT[next_instruction];
+        return 1 + instruction.execute(cpu); // +1 for the CB prefix
     }
 
     fn inc(comptime reg: anytype) Instruction {
@@ -1219,6 +1226,13 @@ const _RST_DF: Instruction = op.jmp(RST{ .addr = 0x18 });
 const _RST_EF: Instruction = op.jmp(RST{ .addr = 0x28 });
 const _RST_FF: Instruction = op.jmp(RST{ .addr = 0x38 });
 
+// Prefix CB opcodes
+
+const PREF_CB: Instruction = .{
+    .execute = op.pref_cb,
+    .metadata = .{ .name = "PREFIX CB" },
+};
+
 // Unimplemented opcode placeholder
 
 const U = Unimplemented;
@@ -1239,11 +1253,13 @@ pub const OPCODES: [256]Instruction = .{
     _SUB_90, _SUB_91, _SUB_92, _SUB_93, _SUB_94, _SUB_95, _SUB_96, _SUB_97, _SBC_98, _SBC_99, _SBC_9A, _SBC_9B, _SBC_9C, _SBC_9D, _SBC_9E, _SBC_9F, // 0x90
     _AND_A0, _AND_A1, _AND_A2, _AND_A3, _AND_A4, _AND_A5, _AND_A6, _AND_A7, _XOR_A8, _XOR_A9, _XOR_AA, _XOR_AB, _XOR_AC, _XOR_AD, _XOR_AE, _XOR_AF, // 0xA0
     __OR_B0, __OR_B1, __OR_B2, __OR_B3, __OR_B4, __OR_B5, __OR_B6, __OR_B7, __CP_B8, __CP_B9, __CP_BA, __CP_BB, __CP_BC, __CP_BD, __CP_BE, __CP_BF, // 0xB0
-    _RET_C0, _POP_C1, __JP_C2, __JP_C3, CALL_C4, PUSH_C5, _ADD_C6, _RST_C7, _RET_C8, _RET_C9, __JP_CA, U(0xCB), CALL_CC, CALL_CD, _ADC_CE, _RST_CF, // 0xC0
+    _RET_C0, _POP_C1, __JP_C2, __JP_C3, CALL_C4, PUSH_C5, _ADD_C6, _RST_C7, _RET_C8, _RET_C9, __JP_CA, PREF_CB, CALL_CC, CALL_CD, _ADC_CE, _RST_CF, // 0xC0
     _RET_D0, _POP_D1, __JP_D2, U(0xD3), CALL_D4, PUSH_D5, _SUB_D6, _RST_D7, _RET_D8, U(0xD9), __JP_DA, U(0xDB), CALL_DC, U(0xDD), _SBC_DE, _RST_DF, // 0xD0
     __LD_E0, _POP_E1, __LD_E2, U(0xE3), U(0xE4), PUSH_E5, _AND_E6, _RST_E7, _ADD_E8, __JP_E9, __LD_EA, U(0xEB), U(0xEC), U(0xED), _XOR_EE, _RST_EF, // 0xE0
     __LD_F0, _POP_F1, __LD_F2, U(0xF3), U(0xF4), PUSH_F5, __OR_F6, _RST_F7, __LD_F8, __LD_F9, __LD_FA, U(0xFB), U(0xFC), U(0xFD), __CP_FE, _RST_FF, // 0xF0
 };
+
+pub const OPCODES_EXT = instructionExt.OPCODES_EXT;
 
 pub inline fn getOpcode(opcode: u8) Instruction {
     return OPCODES[opcode];
