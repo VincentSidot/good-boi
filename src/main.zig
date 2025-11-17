@@ -1,5 +1,7 @@
 const std = @import("std");
 
+const Window = @import("gui/window.zig").Window;
+
 fn logFn(comptime message_level: std.log.Level, comptime scope: anytype, comptime format: []const u8, args: anytype) void {
     _ = scope; // unused
     const level_txt = comptime message_level.asText();
@@ -18,8 +20,7 @@ pub const std_options: std.Options = .{
 };
 
 pub fn main() !void {
-    std.log.info("Info log", .{});
-    std.log.warn("Warning log", .{});
-    std.log.err("Error log", .{});
-    std.log.debug("Debug log", .{});
+    var window = Window.init(800, 600, "Good Boi Emulator");
+
+    window.run();
 }

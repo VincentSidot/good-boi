@@ -35,10 +35,12 @@ test "opcode INC16" {
 }
 
 test "opcode INC Memory" {
+    const Memory = @import("../cpu/memory.zig").Memory;
+
     var cpu = Cpu.init();
     cpu.reg.single.f = .zeroed();
 
-    const addr: u16 = 0x2000;
+    const addr: u16 = Memory.RAM_START + 0x2000;
 
     cpu.reg.set16(.hl, addr);
     cpu.mem.writeByte(addr, 0xFE);
@@ -80,6 +82,7 @@ test "opcode INC Memory" {
 }
 
 test "load" {
+    const Memory = @import("../cpu/memory.zig").Memory;
     var cpu = Cpu.init();
 
     cpu.reg.set8(Register8.a, 0x12);
@@ -92,7 +95,7 @@ test "load" {
     try std.testing.expect(cpu.reg.get8(Register8.b) == 0x12);
 
     const op_b_hl = OPCODES[0x70]; // LD (HL), B
-    const test_addr: u16 = 0x3000;
+    const test_addr: u16 = Memory.RAM_START + 0x0001;
     cpu.reg.set16(Register16.hl, test_addr);
 
     const cycles2 = op_b_hl.execute(&cpu);
@@ -108,9 +111,10 @@ test "load" {
 }
 
 test "load inc dec" {
+    const Memory = @import("../cpu/memory.zig").Memory;
     var cpu = Cpu.init();
 
-    var test_addr: u16 = 0x4000;
+    var test_addr: u16 = Memory.RAM_START + 0x00AF;
 
     cpu.mem.writeByte(test_addr, 0x1A);
     cpu.mem.writeByte(test_addr + 1, 0x1B);
@@ -356,9 +360,10 @@ test "opcode LD - register to register combinations" {
 }
 
 test "opcode LD - memory operations" {
+    const Memory = @import("../cpu/memory.zig").Memory;
     var cpu = Cpu.init();
 
-    const addr: u16 = 0x5000;
+    const addr: u16 = Memory.RAM_START + 0x00FF;
 
     // Test LD (BC), A (0x02)
     cpu.reg.set16(.bc, addr);
@@ -425,9 +430,10 @@ test "opcode LD - memory operations" {
 }
 
 test "opcode LD - increment/decrement operations" {
+    const Memory = @import("../cpu/memory.zig").Memory;
     var cpu = Cpu.init();
 
-    const base_addr: u16 = 0x6000;
+    const base_addr: u16 = Memory.RAM_START + 0x00EE;
 
     // Setup memory
     cpu.mem.writeByte(base_addr, 0x11);
@@ -469,6 +475,7 @@ test "opcode LD - increment/decrement operations" {
 }
 
 test "opcode cycles execution" {
+    const Memory = @import("../cpu/memory.zig").Memory;
     var cpu = Cpu.init();
 
     // Verify cycle counts are returned correctly by execute
@@ -486,7 +493,7 @@ test "opcode cycles execution" {
 
     try std.testing.expect(cycles == 2);
 
-    const addr: u16 = 0x8000;
+    var addr: u16 = Memory.RAM_START + 0x0123;
     cpu.reg.set16(.hl, addr);
     cpu.mem.writeByte(addr, 0x42);
     cycles = OPCODES[0x34].execute(&cpu); // INC (HL)
@@ -514,22 +521,28 @@ test "opcode cycles execution" {
 
     try std.testing.expect(cycles == 2);
 
-    cpu.mem.writeByte(0x0000, 0x42); // immediate value
-    cpu.reg.set16(.pc, 0x0000);
+    addr = Memory.RAM_START + 0x1234;
+
+    cpu.mem.writeByte(addr, 0x42); // immediate value
+    cpu.reg.set16(.pc, addr);
     cycles = OPCODES[0x36].execute(&cpu); // LD (HL), d8
 
     try std.testing.expect(cycles == 3);
 
-    cpu.mem.writeByte(0x0001, 0x34);
-    cpu.mem.writeByte(0x0002, 0x12);
-    cpu.reg.set16(.pc, 0x0001);
+    addr = Memory.RAM_START + 0x0100;
+
+    cpu.mem.writeByte(addr, 0x34);
+    cpu.mem.writeByte(addr + 1, 0x12);
+    cpu.reg.set16(.pc, addr);
     cycles = OPCODES[0x31].execute(&cpu); // LD SP, d16
 
     try std.testing.expect(cycles == 3);
 
-    cpu.mem.writeByte(0x0003, 0x00);
-    cpu.mem.writeByte(0x0004, 0x80);
-    cpu.reg.set16(.pc, 0x0003);
+    addr = Memory.RAM_START + 0x0003;
+
+    cpu.mem.writeByte(addr, 0x00);
+    cpu.mem.writeByte(addr + 1, 0x80);
+    cpu.reg.set16(.pc, addr);
     cycles = OPCODES[0x08].execute(&cpu); // LD (d16), SP
 
     try std.testing.expect(cycles == 5);
@@ -622,13 +635,16 @@ test "opcode flags - N flag" {
 }
 
 test "opcode F8 - LD HL, SP + i8" {
+    const Memory = @import("../cpu/memory.zig").Memory;
     var cpu = Cpu.init();
 
     cpu.reg.single.f = .zeroed();
 
+    const addr = Memory.RAM_START + 0x0012;
+
     cpu.reg.set16(.sp, 0xFFF8);
-    cpu.mem.writeByte(0x0000, 0x08); // i8 = 8
-    cpu.reg.set16(.pc, 0x0000);
+    cpu.mem.writeByte(addr, 0x08); // i8 = 8
+    cpu.reg.set16(.pc, addr);
 
     var cycles = OPCODES[0xF8].execute(&cpu); // LD HL, SP + i8
 
@@ -637,10 +653,10 @@ test "opcode F8 - LD HL, SP + i8" {
     // => Now test with negative offset
     // -8 =>
 
-    cpu.mem.writeByte(0x0001, 0xF8); // i8 = -8
+    cpu.mem.writeByte(addr + 1, 0xF8); // i8 = -8
     cpu.reg.pair.sp = 0x00_FF; // 255
 
-    try std.testing.expect(cpu.reg.pair.pc == 0x0001);
+    try std.testing.expect(cpu.reg.pair.pc == addr + 1);
     cycles = OPCODES[0xF8].execute(&cpu); // LD HL, SP + i8
 
     try std.testing.expect(cpu.reg.pair.hl == 0x00_F7); // 0x00_FF - 0x00_08 = 0x00_F7 => no carry, no half carry
@@ -651,10 +667,10 @@ test "opcode F8 - LD HL, SP + i8" {
     try std.testing.expect(cpu.reg.single.f.h == false);
     try std.testing.expect(cpu.reg.single.f.c == false);
 
-    cpu.mem.writeByte(0x0002, 0xF8); // i8 = -8
+    cpu.mem.writeByte(addr + 2, 0xF8); // i8 = -8
     cpu.reg.pair.sp = 0x0F_00;
 
-    try std.testing.expect(cpu.reg.pair.pc == 0x0002);
+    try std.testing.expect(cpu.reg.pair.pc == addr + 2);
     cycles = OPCODES[0xF8].execute(&cpu); // LD HL, SP + i8
 
     try std.testing.expect(cpu.reg.pair.hl == 0x0E_F8); // 0x0F_00 - 0x00_08 = 0x0E_F8
@@ -715,9 +731,10 @@ test "opcode ADD - register to register" {
 }
 
 test "opcode ADD - memory and immediate" {
+    const Memory = @import("../cpu/memory.zig").Memory;
     var cpu = Cpu.init();
 
-    const addr: u16 = 0x8000;
+    const addr: u16 = Memory.RAM_START + 0x0012;
 
     // Test ADD A, (HL) (0x86)
     cpu.reg.set16(.hl, addr);
@@ -733,8 +750,8 @@ test "opcode ADD - memory and immediate" {
 
     // Test ADD A, d8 (0xC6)
     cpu.reg.set8(.a, 0xF0);
-    cpu.mem.writeByte(0x0000, 0x0F); // immediate value
-    cpu.reg.set16(.pc, 0x0000);
+    cpu.mem.writeByte(addr, 0x0F); // immediate value
+    cpu.reg.set16(.pc, addr);
     cycles = OPCODES[0xC6].execute(&cpu);
 
     try std.testing.expect(cpu.reg.get8(.a) == 0xFF);
@@ -742,7 +759,10 @@ test "opcode ADD - memory and immediate" {
 }
 
 test "opcode ADC - add with carry" {
+    const Memory = @import("../cpu/memory.zig").Memory;
     var cpu = Cpu.init();
+
+    const addr: u16 = Memory.RAM_START + 0x0020;
 
     // Test ADC A, B (0x88) without carry
     cpu.reg.set8(.a, 0x10);
@@ -776,8 +796,8 @@ test "opcode ADC - add with carry" {
 
     // Test ADC A, immediate (0xCE)
     cpu.reg.set8(.a, 0x0E);
-    cpu.mem.writeByte(0x0001, 0x01);
-    cpu.reg.set16(.pc, 0x0001);
+    cpu.mem.writeByte(addr, 0x01);
+    cpu.reg.set16(.pc, addr);
     cpu.reg.single.f.c = true;
     cycles = OPCODES[0xCE].execute(&cpu);
 
@@ -786,7 +806,10 @@ test "opcode ADC - add with carry" {
 }
 
 test "opcode SUB - subtract" {
+    const Memory = @import("../cpu/memory.zig").Memory;
     var cpu = Cpu.init();
+
+    const addr: u16 = Memory.RAM_START + 0x0030;
 
     // Test SUB A, B (0x90)
     cpu.reg.set8(.a, 0x20);
@@ -821,8 +844,8 @@ test "opcode SUB - subtract" {
 
     // Test SUB A, immediate (0xD6)
     cpu.reg.set8(.a, 0x10);
-    cpu.mem.writeByte(0x0002, 0x01);
-    cpu.reg.set16(.pc, 0x0002);
+    cpu.mem.writeByte(addr, 0x01);
+    cpu.reg.set16(.pc, addr);
     cycles = OPCODES[0xD6].execute(&cpu);
 
     try std.testing.expect(cpu.reg.get8(.a) == 0x0F);
@@ -865,7 +888,10 @@ test "opcode SBC - subtract with carry" {
 }
 
 test "opcode CP - compare" {
+    const Memory = @import("../cpu/memory.zig").Memory;
     var cpu = Cpu.init();
+
+    const addr: u16 = Memory.RAM_START + 0x0040;
 
     // Test CP A, B (0xB8) - equal values
     cpu.reg.set8(.a, 0x42);
@@ -899,8 +925,8 @@ test "opcode CP - compare" {
 
     // Test CP A, immediate (0xFE)
     cpu.reg.set8(.a, 0x10);
-    cpu.mem.writeByte(0x0003, 0x0F);
-    cpu.reg.set16(.pc, 0x0003);
+    cpu.mem.writeByte(addr, 0x0F);
+    cpu.reg.set16(.pc, addr);
     cycles = OPCODES[0xFE].execute(&cpu);
 
     try std.testing.expect(cpu.reg.get8(.a) == 0x10); // A should not change
@@ -947,8 +973,8 @@ test "opcode AND - bitwise and" {
 
     // Test AND A, immediate (0xE6)
     cpu.reg.set8(.a, 0xFF);
-    cpu.mem.writeByte(0x0004, 0x80);
-    cpu.reg.set16(.pc, 0x0004);
+    cpu.mem.writeByte(addr, 0x80);
+    cpu.reg.set16(.pc, addr);
     cycles = OPCODES[0xE6].execute(&cpu);
 
     try std.testing.expect(cpu.reg.get8(.a) == 0x80);
@@ -998,8 +1024,8 @@ test "opcode OR - bitwise or" {
 
     // Test OR A, immediate (0xF6)
     cpu.reg.set8(.a, 0x0A);
-    cpu.mem.writeByte(0x0005, 0x05);
-    cpu.reg.set16(.pc, 0x0005);
+    cpu.mem.writeByte(addr2, 0x05);
+    cpu.reg.set16(.pc, addr2);
     cycles = OPCODES[0xF6].execute(&cpu);
 
     try std.testing.expect(cpu.reg.get8(.a) == 0x0F);
@@ -1047,8 +1073,8 @@ test "opcode XOR - bitwise xor" {
 
     // Test XOR A, immediate (0xEE)
     cpu.reg.set8(.a, 0xF0);
-    cpu.mem.writeByte(0x0006, 0x0F);
-    cpu.reg.set16(.pc, 0x0006);
+    cpu.mem.writeByte(addr, 0x0F);
+    cpu.reg.set16(.pc, addr);
     cycles = OPCODES[0xEE].execute(&cpu);
 
     try std.testing.expect(cpu.reg.get8(.a) == 0xFF);
@@ -1126,8 +1152,13 @@ test "bitwise operations - flag behavior" {
 }
 
 test "arithmetic and bitwise operations - cycle counts" {
+    const Memory = @import("../cpu/memory.zig").Memory;
     // Verify that the cycle counts are correct for all operations
     var cpu = Cpu.init();
+
+    const addr = Memory.RAM_START + 0x0050;
+    cpu.reg.set16(.hl, addr);
+    cpu.setPC(addr); // Set PC to a valid memory location
 
     // Arithmetic operations (register to register = 1 cycle)
     try std.testing.expect(OPCODES[0x80].execute(&cpu) == 1); // ADD A, B
@@ -1306,102 +1337,114 @@ test "add operations - 16bit alu" {
 // Branching Instructions Tests
 
 test "jump relative - unconditional JR" {
+    const Memory = @import("../cpu/memory.zig").Memory;
     var cpu = Cpu.init();
 
+    const addr: u16 = Memory.RAM_START + 0x0100;
+
     // Set up memory with jump instruction and offset
-    cpu.setPC(0x1001);
-    cpu.mem.writeByte(0x1000, 0x18); // JR instruction
-    cpu.mem.writeByte(0x1001, 0x05); // Jump forward 5 bytes
+    cpu.setPC(addr + 1);
+    cpu.mem.writeByte(addr, 0x18); // JR instruction
+    cpu.mem.writeByte(addr + 1, 0x05); // Jump forward 5 bytes
 
     const cycles = OPCODES[0x18].execute(&cpu); // JR 5
 
     // PC should be at 0x1002 (after fetching offset) + 5 = 0x1007
-    try std.testing.expect(cpu.getPC() == 0x1007);
+    try std.testing.expect(cpu.getPC() == addr + 2 + 5);
     try std.testing.expect(cycles == 3);
 }
 
 test "jump relative - conditional JR with flags" {
+    const Memory = @import("../cpu/memory.zig").Memory;
     var cpu = Cpu.init();
 
+    const addr: u16 = Memory.RAM_START + 0x0100;
+
     // Test JR NZ when Z flag is clear (should jump)
-    cpu.setPC(0x1001);
-    cpu.mem.writeByte(0x1000, 0x20); // JR NZ instruction
-    cpu.mem.writeByte(0x1001, 0x10); // Jump forward 16 bytes
+    cpu.setPC(addr + 1);
+    cpu.mem.writeByte(addr, 0x20); // JR NZ instruction
+    cpu.mem.writeByte(addr + 1, 0x10); // Jump forward 16 bytes
     cpu.reg.single.f.z = false;
 
     var cycles = OPCODES[0x20].execute(&cpu); // JR NZ, 16
 
-    try std.testing.expect(cpu.getPC() == 0x1012); // 0x1002 + 16
+    try std.testing.expect(cpu.getPC() == addr + 2 + 16); // 0x1002 + 16
     try std.testing.expect(cycles == 3);
 
     // Test JR NZ when Z flag is set (should not jump)
-    cpu.setPC(0x2001);
-    cpu.mem.writeByte(0x2000, 0x20); // JR NZ instruction
-    cpu.mem.writeByte(0x2001, 0x10); // Jump forward 16 bytes
+    cpu.setPC(addr + 1);
+    cpu.mem.writeByte(addr, 0x20); // JR NZ instruction
+    cpu.mem.writeByte(addr + 1, 0x10); // Jump forward 16 bytes
     cpu.reg.single.f.z = true;
 
     cycles = OPCODES[0x20].execute(&cpu); // JR NZ, 16
 
-    try std.testing.expect(cpu.getPC() == 0x2002); // Should not jump
+    try std.testing.expect(cpu.getPC() == addr + 2); // Should not jump
     try std.testing.expect(cycles == 2); // Faster when not jumping
 
     // Test JR Z when Z flag is set (should jump)
-    cpu.setPC(0x3001);
-    cpu.mem.writeByte(0x3000, 0x28); // JR Z instruction
-    cpu.mem.writeByte(0x3001, 0x08); // Jump forward 8 bytes
+    cpu.setPC(addr + 1);
+    cpu.mem.writeByte(addr, 0x28); // JR Z instruction
+    cpu.mem.writeByte(addr + 1, 0x08); // Jump forward 8 bytes
     cpu.reg.single.f.z = true;
 
     cycles = OPCODES[0x28].execute(&cpu); // JR Z, 8
 
-    try std.testing.expect(cpu.getPC() == 0x300A); // 0x3002 + 8
+    try std.testing.expect(cpu.getPC() == addr + 2 + 8); // 0x3002 + 8
     try std.testing.expect(cycles == 3);
 
     // Test JR NC when C flag is clear (should jump)
-    cpu.setPC(0x4001);
-    cpu.mem.writeByte(0x4000, 0x30); // JR NC instruction
-    cpu.mem.writeByte(0x4001, 0x04); // Jump forward 4 bytes
+    cpu.setPC(addr + 1);
+    cpu.mem.writeByte(addr, 0x30); // JR NC instruction
+    cpu.mem.writeByte(addr + 1, 0x04); // Jump forward 4 bytes
     cpu.reg.single.f.c = false;
 
     cycles = OPCODES[0x30].execute(&cpu); // JR NC, 4
 
-    try std.testing.expect(cpu.getPC() == 0x4006); // 0x4002 + 4
+    try std.testing.expect(cpu.getPC() == addr + 2 + 4); // 0x4002 + 4
     try std.testing.expect(cycles == 3);
 
     // Test JR C when C flag is set (should jump)
-    cpu.setPC(0x5001);
-    cpu.mem.writeByte(0x5000, 0x38); // JR C instruction
-    cpu.mem.writeByte(0x5001, 0x02); // Jump forward 2 bytes
+    cpu.setPC(addr + 1);
+    cpu.mem.writeByte(addr, 0x38); // JR C instruction
+    cpu.mem.writeByte(addr + 1, 0x02); // Jump forward 2 bytes
     cpu.reg.single.f.c = true;
 
     cycles = OPCODES[0x38].execute(&cpu); // JR C, 2
 
-    try std.testing.expect(cpu.getPC() == 0x5004); // 0x5002 + 2
+    try std.testing.expect(cpu.getPC() == addr + 2 + 2); // 0x5002 + 2
     try std.testing.expect(cycles == 3);
 }
 
 test "jump relative - negative offsets" {
+    const Memory = @import("../cpu/memory.zig").Memory;
     var cpu = Cpu.init();
 
+    const addr = Memory.RAM_START + 0x0100;
+
     // Test JR with negative offset (backward jump)
-    cpu.setPC(0x1011);
-    cpu.mem.writeByte(0x1010, 0x18); // JR instruction
-    cpu.mem.writeByte(0x1011, 0xF0); // Jump backward 16 bytes (-16 in two's complement)
+    cpu.setPC(addr + 1);
+    cpu.mem.writeByte(addr, 0x18); // JR instruction
+    cpu.mem.writeByte(addr + 1, 0xF0); // Jump backward 16 bytes (-16 in two's complement)
 
     const cycles = OPCODES[0x18].execute(&cpu); // JR -16
 
     // PC should be at 0x1012 (after fetching offset) - 16 = 0x1002
-    try std.testing.expect(cpu.getPC() == 0x1002);
+    try std.testing.expect(cpu.getPC() == addr + 2 - 16);
     try std.testing.expect(cycles == 3);
 }
 
 test "jump absolute - unconditional JP" {
+    const Memory = @import("../cpu/memory.zig").Memory;
     var cpu = Cpu.init();
 
+    const addr = Memory.RAM_START + 0x1000;
+
     // Test JP a16 (0xC3)
-    cpu.setPC(0x1001);
-    cpu.mem.writeByte(0x1000, 0xC3); // JP instruction
-    cpu.mem.writeByte(0x1001, 0x34); // Low byte of address
-    cpu.mem.writeByte(0x1002, 0x12); // High byte of address
+    cpu.setPC(addr + 1);
+    cpu.mem.writeByte(addr, 0xC3); // JP instruction
+    cpu.mem.writeByte(addr + 1, 0x34); // Low byte of address
+    cpu.mem.writeByte(addr + 2, 0x12); // High byte of address
 
     const cycles = OPCODES[0xC3].execute(&cpu); // JP 0x1234
 
@@ -1410,13 +1453,16 @@ test "jump absolute - unconditional JP" {
 }
 
 test "jump absolute - conditional JP with flags" {
+    const Memory = @import("../cpu/memory.zig").Memory;
     var cpu = Cpu.init();
 
+    const addr = Memory.RAM_START + 0x2000;
+
     // Test JP NZ when Z flag is clear (should jump)
-    cpu.setPC(0x2001);
-    cpu.mem.writeByte(0x2000, 0xC2); // JP NZ instruction
-    cpu.mem.writeByte(0x2001, 0x78); // Low byte
-    cpu.mem.writeByte(0x2002, 0x56); // High byte
+    cpu.setPC(addr + 1);
+    cpu.mem.writeByte(addr, 0xC2); // JP NZ instruction
+    cpu.mem.writeByte(addr + 1, 0x78); // Low byte
+    cpu.mem.writeByte(addr + 2, 0x56); // High byte
     cpu.reg.single.f.z = false;
 
     var cycles = OPCODES[0xC2].execute(&cpu); // JP NZ, 0x5678
@@ -1425,15 +1471,15 @@ test "jump absolute - conditional JP with flags" {
     try std.testing.expect(cycles == 4);
 
     // Test JP NZ when Z flag is set (should not jump)
-    cpu.setPC(0x3001);
-    cpu.mem.writeByte(0x3000, 0xC2); // JP NZ instruction
-    cpu.mem.writeByte(0x3001, 0x78); // Low byte
-    cpu.mem.writeByte(0x3002, 0x56); // High byte
+    cpu.setPC(addr + 1);
+    cpu.mem.writeByte(addr, 0xC2); // JP NZ instruction
+    cpu.mem.writeByte(addr + 1, 0x78); // Low byte
+    cpu.mem.writeByte(addr + 2, 0x56); // High byte
     cpu.reg.single.f.z = true;
 
     cycles = OPCODES[0xC2].execute(&cpu); // JP NZ, 0x5678
 
-    try std.testing.expect(cpu.getPC() == 0x3003); // Should not jump
+    try std.testing.expect(cpu.getPC() == addr + 3); // Should not jump
     try std.testing.expect(cycles == 3); // Faster when not jumping
 
     // Test all conditional JP variants
@@ -1449,10 +1495,10 @@ test "jump absolute - conditional JP with flags" {
     };
 
     for (jp_conditions) |condition| {
-        cpu.setPC(0x4001);
-        cpu.mem.writeByte(0x4000, condition.opcode);
-        cpu.mem.writeByte(0x4001, 0xBC); // Low byte
-        cpu.mem.writeByte(0x4002, 0x9A); // High byte
+        cpu.setPC(addr + 1);
+        cpu.mem.writeByte(addr, condition.opcode);
+        cpu.mem.writeByte(addr + 1, 0xBC); // Low byte
+        cpu.mem.writeByte(addr + 2, 0x9A); // High byte
 
         // Set appropriate flag
         if (condition.opcode == 0xC2 or condition.opcode == 0xCA) {
@@ -1467,7 +1513,7 @@ test "jump absolute - conditional JP with flags" {
             try std.testing.expect(cpu.getPC() == 0x9ABC);
             try std.testing.expect(cycles == 4);
         } else {
-            try std.testing.expect(cpu.getPC() == 0x4003);
+            try std.testing.expect(cpu.getPC() == addr + 3);
             try std.testing.expect(cycles == 3);
         }
     }
@@ -1487,49 +1533,52 @@ test "jump indirect - JP (HL)" {
 }
 
 test "call instructions - unconditional and conditional" {
+    const Memory = @import("../cpu/memory.zig").Memory;
     var cpu = Cpu.init();
 
+    const addr = Memory.RAM_START + 0x1000;
+
     // Test CALL a16 (0xCD) - unconditional call
-    cpu.setPC(0x1001); // Ignore opcode fetch
+    cpu.setPC(addr + 1); // Ignore opcode fetch
     cpu.reg.pair.sp = 0xFFFE; // Initialize stack
-    cpu.mem.writeByte(0x1000, 0xCD); // CALL instruction
-    cpu.mem.writeByte(0x1001, 0x34); // Low byte of address
-    cpu.mem.writeByte(0x1002, 0x12); // High byte of address
+    cpu.mem.writeByte(addr, 0xCD); // CALL instruction
+    cpu.mem.writeByte(addr + 1, 0x34); // Low byte of address
+    cpu.mem.writeByte(addr + 2, 0x12); // High byte of address
 
     var cycles = OPCODES[0xCD].execute(&cpu); // CALL 0x1234
 
     // Check that PC was pushed to stack
     const return_addr = cpu.pop();
-    try std.testing.expect(return_addr == 0x1003); // Address after CALL instruction
+    try std.testing.expect(return_addr == addr + 3); // Address after CALL instruction
     try std.testing.expect(cpu.getPC() == 0x1234); // Jumped to call target
     try std.testing.expect(cycles == 6); // 4 base + 2 for call
 
     // Test conditional CALL when condition is true
-    cpu.setPC(0x2001);
+    cpu.setPC(addr + 1);
     cpu.reg.pair.sp = 0xFFFE;
-    cpu.mem.writeByte(0x2000, 0xCC); // CALL Z instruction
-    cpu.mem.writeByte(0x2001, 0x78); // Low byte
-    cpu.mem.writeByte(0x2002, 0x56); // High byte
+    cpu.mem.writeByte(addr, 0xCC); // CALL Z instruction
+    cpu.mem.writeByte(addr + 1, 0x78); // Low byte
+    cpu.mem.writeByte(addr + 2, 0x56); // High byte
     cpu.reg.single.f.z = true;
 
     cycles = OPCODES[0xCC].execute(&cpu); // CALL Z, 0x5678
 
     const return_addr2 = cpu.pop();
-    try std.testing.expect(return_addr2 == 0x2003);
+    try std.testing.expect(return_addr2 == addr + 3);
     try std.testing.expect(cpu.getPC() == 0x5678);
     try std.testing.expect(cycles == 6);
 
     // Test conditional CALL when condition is false
-    cpu.setPC(0x3001);
+    cpu.setPC(addr);
     cpu.reg.pair.sp = 0xFFFE;
-    cpu.mem.writeByte(0x3000, 0xCC); // CALL Z instruction
-    cpu.mem.writeByte(0x3001, 0x78); // Low byte
-    cpu.mem.writeByte(0x3002, 0x56); // High byte
+    cpu.mem.writeByte(addr, 0xCC); // CALL Z instruction
+    cpu.mem.writeByte(addr + 1, 0x78); // Low byte
+    cpu.mem.writeByte(addr + 2, 0x56); // High byte
     cpu.reg.single.f.z = false;
 
     cycles = OPCODES[0xCC].execute(&cpu); // CALL Z, 0x5678
 
-    try std.testing.expect(cpu.getPC() == 0x3003); // Should not call
+    try std.testing.expect(cpu.getPC() == addr + 2); // Should not call
     try std.testing.expect(cycles == 3); // Faster when not calling
 }
 
@@ -1605,53 +1654,56 @@ test "restart instructions - RST" {
 }
 
 test "branching instructions - cycle counts verification" {
+    const Memory = @import("../cpu/memory.zig").Memory;
     var cpu = Cpu.init();
 
+    const addr = Memory.RAM_START + 0x1000;
+
     // Prepare memory and stack for tests
-    cpu.mem.writeByte(0x1000, 0x10); // Relative offset
-    cpu.mem.writeByte(0x1001, 0x34); // Address low byte
-    cpu.mem.writeByte(0x1002, 0x12); // Address high byte
+    cpu.mem.writeByte(addr, 0x10); // Relative offset
+    cpu.mem.writeByte(addr + 1, 0x34); // Address low byte
+    cpu.mem.writeByte(addr + 2, 0x12); // Address high byte
     cpu.reg.pair.sp = 0xFFFC;
     cpu.mem.writeByte(0xFFFC, 0x00); // Return address low
     cpu.mem.writeByte(0xFFFD, 0x10); // Return address high
 
     // Test cycle counts for various branching instructions
-    cpu.setPC(0x1000);
+    cpu.setPC(addr);
     cpu.reg.single.f.z = false;
     try std.testing.expect(OPCODES[0x18].execute(&cpu) == 3); // JR (unconditional)
 
-    cpu.setPC(0x1000);
+    cpu.setPC(addr);
     cpu.reg.single.f.z = false;
     try std.testing.expect(OPCODES[0x20].execute(&cpu) == 3); // JR NZ (taken)
 
-    cpu.setPC(0x1000);
+    cpu.setPC(addr);
     cpu.reg.single.f.z = true;
     try std.testing.expect(OPCODES[0x20].execute(&cpu) == 2); // JR NZ (not taken)
 
-    cpu.setPC(0x1000);
+    cpu.setPC(addr);
     try std.testing.expect(OPCODES[0xC3].execute(&cpu) == 4); // JP (unconditional)
 
-    cpu.setPC(0x1000);
+    cpu.setPC(addr);
     cpu.reg.single.f.z = false;
     try std.testing.expect(OPCODES[0xC2].execute(&cpu) == 4); // JP NZ (taken)
 
-    cpu.setPC(0x1000);
+    cpu.setPC(addr);
     cpu.reg.single.f.z = true;
     try std.testing.expect(OPCODES[0xC2].execute(&cpu) == 3); // JP NZ (not taken)
 
-    cpu.reg.pair.hl = 0x1000;
+    cpu.reg.pair.hl = addr;
     try std.testing.expect(OPCODES[0xE9].execute(&cpu) == 1); // JP (HL)
 
-    cpu.setPC(0x1000);
+    cpu.setPC(addr);
     cpu.reg.pair.sp = 0xFFFE;
     try std.testing.expect(OPCODES[0xCD].execute(&cpu) == 6); // CALL (unconditional)
 
-    cpu.setPC(0x1000);
+    cpu.setPC(addr);
     cpu.reg.pair.sp = 0xFFFE;
     cpu.reg.single.f.z = true;
     try std.testing.expect(OPCODES[0xCC].execute(&cpu) == 6); // CALL Z (taken)
 
-    cpu.setPC(0x1000);
+    cpu.setPC(addr);
     cpu.reg.pair.sp = 0xFFFE;
     cpu.reg.single.f.z = false;
     try std.testing.expect(OPCODES[0xCC].execute(&cpu) == 3); // CALL Z (not taken)
@@ -1667,19 +1719,22 @@ test "branching instructions - cycle counts verification" {
     cpu.reg.single.f.z = false;
     try std.testing.expect(OPCODES[0xC8].execute(&cpu) == 2); // RET Z (not taken)
 
-    cpu.setPC(0x1000);
+    cpu.setPC(addr);
     cpu.reg.pair.sp = 0xFFFE;
     try std.testing.expect(OPCODES[0xC7].execute(&cpu) == 4); // RST 00h
 }
 
 test "branching instructions - flag independence" {
+    const Memory = @import("../cpu/memory.zig").Memory;
     var cpu = Cpu.init();
 
+    const addr = Memory.RAM_START + 0x1000;
+
     // Test that branching instructions don't modify flags
-    cpu.setPC(0x1001);
-    cpu.mem.writeByte(0x1000, 0x10); // Jump offset
-    cpu.mem.writeByte(0x1001, 0x34); // Address low
-    cpu.mem.writeByte(0x1002, 0x12); // Address high
+    cpu.setPC(addr + 1);
+    cpu.mem.writeByte(addr, 0x10); // Jump offset
+    cpu.mem.writeByte(addr + 1, 0x34); // Address low
+    cpu.mem.writeByte(addr + 2, 0x12); // Address high
 
     // Set all flags to known values
     cpu.reg.single.f.z = true;
@@ -1693,7 +1748,7 @@ test "branching instructions - flag independence" {
     _ = OPCODES[0x18].execute(&cpu); // JR
     try std.testing.expect(std.meta.eql(cpu.reg.single.f, original_flags));
 
-    cpu.setPC(0x1001);
+    cpu.setPC(addr + 1);
     _ = OPCODES[0xC3].execute(&cpu); // JP
     try std.testing.expect(std.meta.eql(cpu.reg.single.f, original_flags));
 
@@ -1701,7 +1756,7 @@ test "branching instructions - flag independence" {
     _ = OPCODES[0xE9].execute(&cpu); // JP (HL)
     try std.testing.expect(std.meta.eql(cpu.reg.single.f, original_flags));
 
-    cpu.setPC(0x1001);
+    cpu.setPC(addr + 1);
     cpu.reg.pair.sp = 0xFFFE;
     _ = OPCODES[0xCD].execute(&cpu); // CALL
     try std.testing.expect(std.meta.eql(cpu.reg.single.f, original_flags));
@@ -1712,7 +1767,7 @@ test "branching instructions - flag independence" {
     _ = OPCODES[0xC9].execute(&cpu); // RET
     try std.testing.expect(std.meta.eql(cpu.reg.single.f, original_flags));
 
-    cpu.setPC(0x1001);
+    cpu.setPC(addr + 1);
     cpu.reg.pair.sp = 0xFFFE;
     _ = OPCODES[0xC7].execute(&cpu); // RST 00h
     try std.testing.expect(std.meta.eql(cpu.reg.single.f, original_flags));

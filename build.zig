@@ -70,7 +70,7 @@ pub fn build(b: *std.Build) void {
             // definition if desireable (e.g. firmware for embedded devices).
             .target = target,
             .optimize = optimize,
-            .link_libc = false, // Who needs libc anyway?
+            .link_libc = true, // Who needs libc anyway?
             // List of modules available for import in source files part of the
             // root module.
             .imports = &.{
@@ -84,7 +84,15 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
-    exe.root_module.addIncludePath(b.path("c"));
+    exe.root_module.addIncludePath(b.path("raylib-5.5/include"));
+    exe.root_module.addObjectFile(b.path("raylib-5.5/lib/libraylib.a"));
+
+    if (target.result.os.tag == .macos) {
+        // Link macOS frameworks
+        exe.root_module.linkFramework("IOKit", .{});
+        exe.root_module.linkFramework("OpenGL", .{});
+        exe.root_module.linkFramework("Cocoa", .{});
+    }
 
     // This declares intent for the executable to be installed into the
     // install prefix when running `zig build` (i.e. when executing the default

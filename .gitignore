@@ -4,3 +4,5 @@ zig-out
 trash.zig
 
 output.zig.merged
+
+raylib-5.5

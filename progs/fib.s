@@ -1,6 +1,6 @@
 ;; Simple fibonacci program to test the cpu.
 
-;; 0x0000 -> Main entry point
+;; 0x8000 -> Main entry point
 NOP                         ; 0x00 No operation (just a placeholder)
 LD HL, 0x0002               ; 0x21 Load i = 0 into BC
 PUSH HL                     ; 0xE5 Push Fib(0)
@@ -25,16 +25,17 @@ LOOP:
     POP HL                  ; 0xE1 Restore i
 
     INC BC                  ; 0x03 i++
-    LD A, 0x000B            ; 0xFA Load 11 into A
+    LD A, 0x0B              ; 0x3E Load 11 into A
+    LD A, (0x000B)         
     CP A, C                 ; 0xB9 Compare i with 11
     PUSH BC                 ; 0xC5 Save i
-    JP NZ, 0x000B           ; 0xC2 If i < 10, repeat loop
+    JP NZ, 0x800B           ; 0xC2 If i < 10, repeat loop
 
 ; End of program
 HALT                        ; 0x76 Halt execution
 
 
-;; 0x0040 -> Fibonacci function
+;; 0x8040 -> Fibonacci function
 ;; Input:
 ;; Fib(n-2) => HL
 ;; Fib(n-1) => DE
