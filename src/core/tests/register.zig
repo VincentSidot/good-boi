@@ -11,9 +11,6 @@ fn getBC(reg: *const Registers) u16 {
     const c: u16 = @intCast(reg.single.c);
 
     return (b << 8) | c;
-
-    // (self.b as u16) << 8
-    // | self.c as u16
 }
 
 test "endianess" {
@@ -28,8 +25,6 @@ test "endianess" {
 test "regsiter" {
     var reg: Registers = .{ .pair = .{ .af = 0xAEB0 } };
 
-    // std.debug.print("Reg: {any}\n", .{reg});
-
     try std.testing.expect(reg.single.a == 0xAE);
 
     try std.testing.expect(reg.single.f.z == true);
@@ -40,7 +35,7 @@ test "regsiter" {
     reg.single.a = 0xF0;
     try std.testing.expect(reg.pair.af == 0xF0B0);
 
-    var reg2 = Registers.zeroed();
+    var reg2 = Registers.init();
 
     reg2.pair.af = 0xDEAD;
     reg2.pair.bc = 0xBEEF;
@@ -66,7 +61,9 @@ test "regsiter" {
 }
 
 test "raw access" {
-    var reg = Registers.zeroed();
+    var reg = Registers.init();
+
+    reg.single.f = .zeroed();
 
     reg.set8(Register8.a, 0x12);
     reg.set16(Register16.bc, 0xDEAD);

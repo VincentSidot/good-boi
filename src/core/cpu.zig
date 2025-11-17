@@ -10,7 +10,7 @@ const Memory = memory.Memory;
 
 pub const Cpu = struct {
     /// CPU Registers
-    reg: Registers = Registers.zeroed(),
+    reg: Registers = Registers.init(),
     /// CPU Memory
     mem: Memory = Memory.init(),
     /// Interrupts enabled flag
@@ -22,7 +22,12 @@ pub const Cpu = struct {
 
     pub fn init() Cpu {
         return Cpu{
-            .irqEnabled = false, // IRQs disabled on init (idk why)
+            .reg = Registers.init(),
+            .mem = Memory.init(),
+
+            .irqEnabled = false,
+            .halted = false,
+            .cycles = 0,
         };
     }
 
@@ -90,7 +95,7 @@ pub const Cpu = struct {
     pub fn step(self: *Cpu) u8 {
         if (self.halted) {
             @branchHint(.cold); // Halted state is uncommon during normal execution
-            return 0; // No cycles consumed when halted
+            return 1; // No cycles consumed when halted
         }
 
         const opcode = self.fetch();

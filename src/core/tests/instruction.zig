@@ -18,6 +18,9 @@ test "opcode NOP" {
 
 test "opcode INC16" {
     var cpu = Cpu.init();
+
+    cpu.reg.single.f = .zeroed();
+
     cpu.reg.set16(.bc, 0xFFFF);
 
     const opcode = OPCODES[0x03]; // INC BC
@@ -33,6 +36,7 @@ test "opcode INC16" {
 
 test "opcode INC Memory" {
     var cpu = Cpu.init();
+    cpu.reg.single.f = .zeroed();
 
     const addr: u16 = 0x2000;
 
@@ -619,6 +623,8 @@ test "opcode flags - N flag" {
 
 test "opcode F8 - LD HL, SP + i8" {
     var cpu = Cpu.init();
+
+    cpu.reg.single.f = .zeroed();
 
     cpu.reg.set16(.sp, 0xFFF8);
     cpu.mem.writeByte(0x0000, 0x08); // i8 = 8
@@ -2106,6 +2112,8 @@ test "extended instructions - comprehensive bit operations" {
 
 test "extended instructions - register ordering verification" {
     var cpu = Cpu.init();
+
+    cpu.reg.single.f = .zeroed();
 
     // Verify the register order matches expected pattern: B, C, D, E, H, L, (HL), A
     const test_value: u8 = 0b10101010; // => 170d

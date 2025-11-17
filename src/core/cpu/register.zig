@@ -4,39 +4,41 @@ const std = @import("std");
 const memory = @import("./memory.zig");
 
 const STACK_START: u16 = memory.Memory.STACK_START;
+pub const PROGRAM_START: u16 = memory.Memory.PROGRAM_START;
 
 comptime {
     // Sanity: Flags must be exactly one byte
     if (@sizeOf(Flags) != 1) @compileError("Flags must be 1 byte.");
 }
 
-pub const FlagsLe = packed struct {
-    __unused: u4 = 0,
+pub const Flags = packed struct {
+    // Flags is initialized to 0b10110000 (0xB0)
 
-    c: bool = false, // Carry Flag
-    h: bool = false, // Half Carry Flag
+    const __unusedLEType = if (builtin.target.cpu.arch.endian() == .little) u4 else void;
+    const __unusedBEType = if (builtin.target.cpu.arch.endian() == .big) u4 else void;
+
+    __unusedLE: __unusedLEType = if (__unusedLEType == void) {} else 0,
+
+    c: bool = true, // Carry Flag
+    h: bool = true, // Half Carry Flag
     n: bool = false, // Subtract Flag
-    z: bool = false, // Zero Flag
+    z: bool = true, // Zero Flag
 
-    pub inline fn zeroed() FlagsLe {
-        return FlagsLe{};
+    __unusedBE: __unusedBEType = if (__unusedBEType == void) {} else 0,
+
+    pub inline fn init() Flags {
+        return Flags{};
+    }
+
+    pub inline fn zeroed() Flags {
+        return Flags{
+            .z = false,
+            .n = false,
+            .h = false,
+            .c = false,
+        };
     }
 };
-
-pub const FlagsBe = packed struct {
-    z: bool = false, // Zero Flag
-    n: bool = false, // Subtract Flag
-    h: bool = false, // Half Carry Flag
-    c: bool = false, // Carry Flag
-
-    __unused: u4 = 0,
-
-    pub inline fn zeroed() FlagsBe {
-        return FlagsBe{};
-    }
-};
-
-pub const Flags = if (builtin.target.cpu.arch.endian() == .little) FlagsLe else FlagsBe;
 
 const Pairs = packed struct {
     af: u16 = 0,
@@ -187,8 +189,22 @@ pub const Registers = packed union {
     // Access to 8-bit registers
     single: Single,
 
-    pub inline fn zeroed() Registers {
-        return Registers{ .pair = .{} };
+    pub inline fn init() Registers {
+        var regs: Registers = undefined;
+
+        regs.pair.pc = PROGRAM_START;
+        regs.pair.sp = STACK_START;
+
+        regs.single.a = 0x01;
+        regs.single.b = 0x00;
+        regs.single.c = 0x13;
+        regs.single.d = 0x00;
+        regs.single.e = 0xD8;
+        regs.single.f = Flags.init(); // Flags init to 0xB0
+        regs.single.h = 0x01;
+        regs.single.l = 0x4D;
+
+        return regs;
     }
 
     const _rawSingle = [@bitSizeOf(Registers) / @bitSizeOf(u8)]u8;
