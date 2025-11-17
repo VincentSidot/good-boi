@@ -240,6 +240,10 @@ test "CPU stack operations with edge addresses" {
 }
 
 test "FIB First steps" {
+    const log_level_backup = std.testing.log_level;
+    defer std.testing.log_level = log_level_backup;
+    std.testing.log_level = .info; // Avoid steps printing
+
     const MAX_STEP_COUNT = 10_000;
     const OP_HALT: u8 = 0x76;
 

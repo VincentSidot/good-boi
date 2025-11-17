@@ -19,7 +19,7 @@ const InstructionMetadata = struct {
     name: []const u8, // Name of the instruction
 };
 
-const Instruction = struct {
+pub const Instruction = struct {
     execute: *const fn (cpu: *Cpu) u8,
     metadata: InstructionMetadata,
 };
@@ -44,7 +44,7 @@ fn Unimplemented(comptime code: u8) Instruction {
     };
 }
 
-inline fn getReg8(cpu: *const Cpu, reg: Register8) u8 {
+pub inline fn getReg8(cpu: *const Cpu, reg: Register8) u8 {
     return cpu.reg.get8(reg);
 }
 
@@ -52,7 +52,7 @@ inline fn getReg16(cpu: *const Cpu, reg: Register16) u16 {
     return cpu.reg.get16(reg);
 }
 
-fn getMemory(comptime postOp: fn (u16) callconv(.@"inline") u16) fn (*Cpu, Register16Memory) callconv(.@"inline") u8 {
+pub fn getMemory(comptime postOp: fn (u16) callconv(.@"inline") u16) fn (*Cpu, Register16Memory) callconv(.@"inline") u8 {
     const _inner = struct {
         inline fn execute(cpu: *const Cpu, reg: Register16Memory) u8 {
             const address = cpu.reg.get16(reg.asReg16());
@@ -105,7 +105,7 @@ inline fn getRst(comptime addr: u16) fn (*Cpu, _: RST) callconv(.@"inline") u16 
     return _inner.execute;
 }
 
-inline fn setReg8(cpu: *Cpu, reg: Register8, value: u8) void {
+pub inline fn setReg8(cpu: *Cpu, reg: Register8, value: u8) void {
     cpu.reg.set8(reg, value);
 }
 
@@ -113,7 +113,7 @@ inline fn setReg16(cpu: *Cpu, reg: Register16, value: u16) void {
     cpu.reg.set16(reg, value);
 }
 
-fn setMemory(comptime postOp: fn (u16) callconv(.@"inline") u16) fn (*Cpu, Register16Memory, u8) callconv(.@"inline") void {
+pub fn setMemory(comptime postOp: fn (u16) callconv(.@"inline") u16) fn (*Cpu, Register16Memory, u8) callconv(.@"inline") void {
     const _inner = struct {
         inline fn execute(cpu: *Cpu, reg: Register16Memory, value: u8) void {
             const address = cpu.reg.get16(reg.asReg16());
@@ -128,7 +128,7 @@ fn setMemory(comptime postOp: fn (u16) callconv(.@"inline") u16) fn (*Cpu, Regis
     return _inner.execute;
 }
 
-const RegisterMemoryOperation = enum {
+pub const RegisterMemoryOperation = enum {
     inc,
     dec,
 
@@ -163,7 +163,7 @@ const RegisterMemoryOperation = enum {
         return value - 1;
     }
 
-    inline fn _nop(value: u16) u16 {
+    pub inline fn _nop(value: u16) u16 {
         return value;
     }
 };
@@ -377,9 +377,9 @@ const FlagsOps = enum {
     }
 };
 
-const R8 = Register8;
+pub const R8 = Register8;
 const R16 = Register16;
-const RM = Register16Memory;
+pub const RM = Register16Memory;
 const RMO = struct {
     reg: Register16Memory,
     op: RegisterMemoryOperation,
@@ -399,7 +399,7 @@ const IM16 = struct { isCall: bool = false, flags: FlagsOps = .Always };
 const RET = struct { flags: FlagsOps = .Always };
 const RST = struct { addr: u16 };
 
-fn regAsText(reg: anytype) []const u8 {
+pub fn regAsText(reg: anytype) []const u8 {
     comptime {
         const regType = @TypeOf(reg);
 

@@ -6,6 +6,7 @@ const Register16 = @import("../cpu/register.zig").Register16;
 const Register8 = @import("../cpu/register.zig").Register8;
 
 const OPCODES = @import("../cpu/instruction.zig").OPCODES;
+const OPCODES_EXT = @import("../cpu/instructionExt.zig").OPCODES_EXT;
 
 test "opcode NOP" {
     var cpu: Cpu = .{};
@@ -1719,4 +1720,14 @@ test "branching instructions - flag independence" {
     cpu.reg.pair.sp = 0xFFFE;
     _ = OPCODES[0xC7].execute(&cpu); // RST 00h
     try std.testing.expect(std.meta.eql(cpu.reg.single.f, original_flags));
+}
+
+test "extended instructions" {
+    // Dumps
+
+    const idx = 0x03;
+
+    const instr = OPCODES_EXT[idx];
+
+    try std.testing.expect(std.mem.eql(u8, instr.metadata.name, "RLC E"));
 }

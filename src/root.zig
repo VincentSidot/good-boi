@@ -2,6 +2,6 @@
 const std = @import("std");
 
 test {
-    std.testing.log_level = .debug;
+    // std.testing.log_level = .debug;
     std.testing.refAllDecls(@import("./core/cpu.zig"));
 }
