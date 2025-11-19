@@ -38,8 +38,8 @@ test "CPU fetch - single byte" {
     var cpu = Cpu.init();
 
     // Set up test data in memory
-    cpu.mem.writeByte(Memory.RAM_START + 0x0000, 0x42);
-    cpu.mem.writeByte(Memory.RAM_START + 0x0001, 0x84);
+    cpu.mem.write(Memory.RAM_START + 0x0000, 0x42);
+    cpu.mem.write(Memory.RAM_START + 0x0001, 0x84);
     cpu.reg.pair.pc = Memory.RAM_START + 0x0000;
 
     // Test fetching first byte
@@ -60,8 +60,8 @@ test "CPU fetch16 - 16-bit word" {
     const addr = Memory.RAM_START + 0x0010;
 
     // Set up test data in memory (little-endian: low byte first, then high byte)
-    cpu.mem.writeByte(addr, 0x34); // Low byte
-    cpu.mem.writeByte(addr + 1, 0x12); // High byte
+    cpu.mem.write(addr, 0x34); // Low byte
+    cpu.mem.write(addr + 1, 0x12); // High byte
     cpu.reg.pair.pc = addr;
 
     // Test fetching 16-bit word
@@ -77,10 +77,10 @@ test "CPU fetch16 - multiple words" {
     const addr = Memory.RAM_START + 0x001F;
 
     // Set up multiple 16-bit words in memory
-    cpu.mem.writeByte(addr, 0x78); // Low byte of first word
-    cpu.mem.writeByte(addr + 1, 0x56); // High byte of first word
-    cpu.mem.writeByte(addr + 2, 0xBC); // Low byte of second word
-    cpu.mem.writeByte(addr + 3, 0x9A); // High byte of second word
+    cpu.mem.write(addr, 0x78); // Low byte of first word
+    cpu.mem.write(addr + 1, 0x56); // High byte of first word
+    cpu.mem.write(addr + 2, 0xBC); // Low byte of second word
+    cpu.mem.write(addr + 3, 0x9A); // High byte of second word
     cpu.reg.pair.pc = addr;
 
     // Test fetching first word
@@ -108,8 +108,8 @@ test "CPU push and pop - single value" {
     try std.testing.expect(cpu.reg.pair.sp == 0xFFFC);
 
     // Verify the value was written to memory (little-endian)
-    try std.testing.expect(cpu.mem.readByte(0xFFFC) == 0x34); // Low byte
-    try std.testing.expect(cpu.mem.readByte(0xFFFD) == 0x12); // High byte
+    try std.testing.expect(cpu.mem.read(0xFFFC) == 0x34); // Low byte
+    try std.testing.expect(cpu.mem.read(0xFFFD) == 0x12); // High byte
 
     // Pop the value back
     const popped_value = cpu.pop();
@@ -161,14 +161,14 @@ test "CPU push - stack grows downward" {
     // Push first value
     cpu.push(value1);
     try std.testing.expect(cpu.reg.pair.sp == addr - 2);
-    try std.testing.expect(cpu.mem.readByte(addr - 2) == 0xBB); // Low byte
-    try std.testing.expect(cpu.mem.readByte(addr - 1) == 0xAA); // High byte
+    try std.testing.expect(cpu.mem.read(addr - 2) == 0xBB); // Low byte
+    try std.testing.expect(cpu.mem.read(addr - 1) == 0xAA); // High byte
 
     // Push second value
     cpu.push(value2);
     try std.testing.expect(cpu.reg.pair.sp == addr - 4);
-    try std.testing.expect(cpu.mem.readByte(addr - 4) == 0xDD); // Low byte
-    try std.testing.expect(cpu.mem.readByte(addr - 3) == 0xCC); // High byte
+    try std.testing.expect(cpu.mem.read(addr - 4) == 0xDD); // Low byte
+    try std.testing.expect(cpu.mem.read(addr - 3) == 0xCC); // High byte
 }
 
 test "CPU pop - stack underflow detection" {
@@ -192,7 +192,7 @@ test "CPU memory interaction through fetch" {
     // Test that CPU properly interacts with memory
     // Write test pattern to memory
     for (0..10) |i| {
-        cpu.mem.writeByte(addr + @as(u16, @intCast(i)), @intCast(i * 2));
+        cpu.mem.write(addr + @as(u16, @intCast(i)), @intCast(i * 2));
     }
 
     // Use fetch to read the pattern back
@@ -217,8 +217,8 @@ test "CPU stack operations with edge addresses" {
     cpu.push(test_val);
 
     try std.testing.expect(cpu.reg.pair.sp == addr - 2);
-    try std.testing.expect(cpu.mem.readByte(addr - 2) == 0xAD); // Low byte
-    try std.testing.expect(cpu.mem.readByte(addr - 1) == 0xDE); // High byte
+    try std.testing.expect(cpu.mem.read(addr - 2) == 0xAD); // Low byte
+    try std.testing.expect(cpu.mem.read(addr - 1) == 0xDE); // High byte
 
     const popped = cpu.pop();
     try std.testing.expect(popped == test_val);
@@ -240,18 +240,18 @@ test "FIB First steps" {
     cpu.setPC(Memory.RAM_START); // Small hack to use ram for this test
 
     // Print current working directory for debugging
-    try loadFileIntoMemory(&cpu, "./bin/fib.gb", 0x0000); // ADDR here is related to raw memory layout (it's aleardy shifted by ROM_START)
+    try loadFileIntoMemory(&cpu, "./bin/fib.gb", Memory.RAM_START);
 
     // Verify that the first few bytes are loaded correctly
-    try std.testing.expect(cpu.mem.readByte(Memory.RAM_START + 0x0000) == 0x00); // NOP
-    try std.testing.expect(cpu.mem.readByte(Memory.RAM_START + 0x0001) == 0x21);
-    try std.testing.expect(cpu.mem.readByte(Memory.RAM_START + 0x0010) == 0xE5);
+    try std.testing.expect(cpu.mem.read(Memory.RAM_START + 0x0000) == 0x00); // NOP
+    try std.testing.expect(cpu.mem.read(Memory.RAM_START + 0x0001) == 0x21);
+    try std.testing.expect(cpu.mem.read(Memory.RAM_START + 0x0010) == 0xE5);
 
     std.log.debug("Running few CPU steps...", .{});
 
     // Let's play few CPU steps
     var i: usize = 0;
-    while (i < MAX_STEP_COUNT and cpu.mem.readByte(cpu.getPC()) != OP_HALT) : (i += 1) {
+    while (i < MAX_STEP_COUNT and cpu.mem.read(cpu.getPC()) != OP_HALT) : (i += 1) {
         _ = cpu.step();
     }
 
@@ -266,7 +266,7 @@ test "FIB First steps" {
     var fib_n: u8 = 2;
 
     while (offset < TARGET_FIB_COUNT) : (offset += 1) {
-        const value = cpu.mem.readByte(address + offset);
+        const value = cpu.mem.read(address + offset);
 
         std.log.debug("FIB[{d}] = {d} | Expected = {d}", .{ offset, value, fib_n });
         try std.testing.expect(value == fib_n);

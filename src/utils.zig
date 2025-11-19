@@ -1,6 +1,9 @@
+const builtin = @import("builtin");
 const std = @import("std");
 
 pub const CRASH_ON_INVALID = true;
+
+pub const IS_TEST = builtin.is_test;
 
 pub const log = std.log;
 

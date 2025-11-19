@@ -67,7 +67,7 @@ pub fn getMemory(comptime postOp: fn (u16) callconv(.@"inline") u16) fn (*Cpu, R
                 cpu.reg.set16(reg.asReg16(), new_address);
             }
 
-            return cpu.mem.readByte(address);
+            return cpu.mem.read(address);
         }
     };
 
@@ -127,7 +127,7 @@ pub fn setMemory(comptime postOp: fn (u16) callconv(.@"inline") u16) fn (*Cpu, R
                 const new_address = postOp(address);
                 cpu.reg.set16(reg.asReg16(), new_address);
             }
-            cpu.mem.writeByte(address, value);
+            cpu.mem.write(address, value);
         }
     };
 
@@ -448,7 +448,7 @@ const op = struct {
         const addr = 0xFF00 + @as(u16, offset);
 
         const value = cpu.reg.single.a;
-        cpu.mem.writeByte(addr, value);
+        cpu.mem.write(addr, value);
 
         return 3;
     }
@@ -458,7 +458,7 @@ const op = struct {
         const offset = cpu.fetch();
         const addr = 0xFF00 + @as(u16, offset);
 
-        const value = cpu.mem.readByte(addr);
+        const value = cpu.mem.read(addr);
         cpu.reg.single.a = value;
 
         return 3;
@@ -469,7 +469,7 @@ const op = struct {
         const addr = 0xFF00 + @as(u16, cpu.reg.single.c);
         const value = cpu.reg.single.a;
 
-        cpu.mem.writeByte(addr, value);
+        cpu.mem.write(addr, value);
 
         return 2;
     }
@@ -477,7 +477,7 @@ const op = struct {
     /// Load A from address
     fn ld_f2(cpu: *Cpu) u8 {
         const addr = 0xFF00 + @as(u16, cpu.reg.single.c);
-        const value = cpu.mem.readByte(addr);
+        const value = cpu.mem.read(addr);
 
         cpu.reg.single.a = value;
 
@@ -489,8 +489,8 @@ const op = struct {
         const addr = cpu.fetch16();
         const valueSplit = math.splitBytes(cpu.reg.pair.sp);
 
-        cpu.mem.writeByte(addr, valueSplit.low);
-        cpu.mem.writeByte(addr + 1, valueSplit.high);
+        cpu.mem.write(addr, valueSplit.low);
+        cpu.mem.write(addr + 1, valueSplit.high);
 
         return 5;
     }
@@ -523,7 +523,7 @@ const op = struct {
         const addr = cpu.fetch16();
         const value = cpu.reg.single.a;
 
-        cpu.mem.writeByte(addr, value);
+        cpu.mem.write(addr, value);
 
         return 4;
     }
@@ -531,7 +531,7 @@ const op = struct {
     /// Load A from address
     fn ld_fa(cpu: *Cpu) u8 {
         const addr = cpu.fetch16();
-        const value = cpu.mem.readByte(addr);
+        const value = cpu.mem.read(addr);
 
         cpu.reg.single.a = value;
 

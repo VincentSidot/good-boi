@@ -9,8 +9,8 @@ test "RAW MEM read/write" {
 
     const addr = Memory.RAM_START + 0x0012;
 
-    memory.writeByte(addr, 0xAB);
-    const value = memory.readByte(addr);
+    memory.write(addr, 0xAB);
+    const value = memory.read(addr);
 
     try std.testing.expect(value == 0xAB);
 }

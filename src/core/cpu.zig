@@ -9,6 +9,8 @@ const Registers = register.Registers;
 const Memory = memory.Memory;
 
 pub const Cpu = struct {
+    const Self = @This();
+
     /// CPU Registers
     reg: Registers = Registers.init(),
     /// CPU Memory
@@ -20,8 +22,8 @@ pub const Cpu = struct {
     /// Total CPU cycles executed
     cycles: u64 = 0,
 
-    pub fn init() Cpu {
-        return Cpu{
+    pub fn init() Self {
+        return Self{
             .reg = Registers.init(),
             .mem = Memory.init(),
 
@@ -31,18 +33,18 @@ pub const Cpu = struct {
         };
     }
 
-    pub fn fetch(self: *Cpu) u8 {
+    pub fn fetch(self: *Self) u8 {
         if (self.reg.pair.pc == Memory.RAM_SIZE - 1) {
             @panic("Program counter out of bounds");
         }
 
-        const opcode = self.mem.readByte(self.reg.pair.pc);
+        const opcode = self.mem.read(self.reg.pair.pc);
         self.reg.pair.pc += 1;
 
         return opcode;
     }
 
-    pub fn fetch16(self: *Cpu) u16 {
+    pub fn fetch16(self: *Self) u16 {
         const low = self.fetch();
         const high = self.fetch();
 
@@ -50,7 +52,7 @@ pub const Cpu = struct {
         return value;
     }
 
-    pub fn pop(self: *Cpu) u16 {
+    pub fn pop(self: *Self) u16 {
         if (self.reg.pair.sp == Memory.STACK_START) {
             @panic("Stack underflow");
         } else if (self.reg.pair.sp + 1 >= Memory.STACK_START) {
@@ -60,39 +62,39 @@ pub const Cpu = struct {
             self.reg.pair.sp += 2;
         }
 
-        const low = self.mem.readByte(self.reg.pair.sp);
-        const high = self.mem.readByte(self.reg.pair.sp + 1);
+        const low = self.mem.read(self.reg.pair.sp);
+        const high = self.mem.read(self.reg.pair.sp + 1);
 
         return math.mergeBytes(low, high);
     }
 
-    pub fn push(self: *Cpu, value: u16) void {
+    pub fn push(self: *Self, value: u16) void {
         self.reg.pair.sp -= 2;
 
         const valueSplit = math.splitBytes(value);
 
-        self.mem.writeByte(self.reg.pair.sp, valueSplit.low);
-        self.mem.writeByte(self.reg.pair.sp + 1, valueSplit.high);
+        self.mem.write(self.reg.pair.sp, valueSplit.low);
+        self.mem.write(self.reg.pair.sp + 1, valueSplit.high);
     }
 
-    pub fn getPC(self: *const Cpu) u16 {
+    pub fn getPC(self: *const Self) u16 {
         return self.reg.pair.pc;
     }
 
-    pub fn setPC(self: *Cpu, address: u16) void {
+    pub fn setPC(self: *Self, address: u16) void {
         self.reg.pair.pc = address;
     }
 
-    pub fn setIRQ(self: *Cpu, enabled: bool) void {
+    pub fn setIRQ(self: *Self, enabled: bool) void {
         self.irqEnabled = enabled;
     }
 
-    pub fn setHalted(self: *Cpu, halted: bool) void {
+    pub fn setHalted(self: *Self, halted: bool) void {
         self.halted = halted;
     }
 
     /// Executes a single CPU step and returns the number of cycles taken.
-    pub fn step(self: *Cpu) u8 {
+    pub fn step(self: *Self) u8 {
         if (self.halted) {
             @branchHint(.cold); // Halted state is uncommon during normal execution
             return 1; // No cycles consumed when halted
