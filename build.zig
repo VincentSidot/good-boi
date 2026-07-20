@@ -37,6 +37,35 @@ pub fn build(b: *std.Build) void {
 
     b.installArtifact(exe);
 
+    // Assembler CLI: `zig build asm -- progs/fib.s bin/fib.gb`.
+    // Shares its core with the comptime assembler the tests use.
+    const asm_mod = b.addModule("gbasm", .{
+        .root_source_file = b.path("src/tools/asm.zig"),
+        .target = target,
+    });
+
+    const asm_exe = b.addExecutable(.{
+        .name = "gbasm",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("utils/asm_cli.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "gbasm", .module = asm_mod },
+            },
+        }),
+    });
+    b.installArtifact(asm_exe);
+
+    const asm_run = b.addRunArtifact(asm_exe);
+    if (b.args) |args| {
+        asm_run.addArgs(args);
+    } else {
+        asm_run.addArgs(&.{ "progs/fib.s", "bin/fib.gb" });
+    }
+    const asm_step = b.step("asm", "Assemble a .s file (defaults to progs/fib.s)");
+    asm_step.dependOn(&asm_run.step);
+
     // `zig build run [-- args...]`, running from the install prefix.
     const run_cmd = b.addRunArtifact(exe);
     run_cmd.step.dependOn(b.getInstallStep());

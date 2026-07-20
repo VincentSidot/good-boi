@@ -1,58 +1,53 @@
 ;; Simple fibonacci program to test the cpu.
+;;
+;; Assembled by src/tools/asm.zig (`zig build asm`). Branch targets come from
+;; labels now, so the hand-computed 0x8040 / 0x800B addresses are gone.
 
-;; 0x8000 -> Main entry point
-NOP                         ; 0x00 No operation (just a placeholder)
-LD HL, 0x0002               ; 0x21 Load i = 0 into BC
-PUSH HL                     ; 0xE5 Push Fib(0)
-LD HL, 0x0001               ; 0x21 Load n = 1 into DE
-LD DE, 0x0001               ; 0x11 Load n = 2 into HL
+.org $8000
+
+storage equ $B000               ; where the results are written
+limit   equ 11                  ; stop once the counter reaches this
+
+;; Entry point
+        NOP                     ; placeholder
+        LD HL, $0002            ; Fib(2)
+        PUSH HL
+        LD HL, $0001            ; Fib(n)   = 1
+        LD DE, $0001            ; Fib(n-1) = 1
 
 LOOP:
-    ; Run Fibonacci calculation
-    CALL FIB                ; 0xCD Call Fibonacci function
-    POP BC                  ; 0xC1 Pop i counter into BC (Fib(n))
-    PUSH DE                 ; 0xD5 Save Fib(n-1)
-    PUSH HL                 ; 0xE5 Save Fib(n)
+        ; Run one Fibonacci step
+        CALL FIB
+        POP BC                  ; i counter
+        PUSH DE                 ; save Fib(n-1)
+        PUSH HL                 ; save Fib(n)
 
-    ; Store result    
-    LD HL, 0xB000           ; 0x21 Load base address for Fibonacci storage
-    ADD HL, BC              ; 0x09 Offset by ADDR
-    POP DE                  ; 0xD1 Pop Fib(n)
-    LD A, E                 ; 0x7B Load low byte of address
-    LD (HL), A              ; 0x77 Store high byte
+        ; Store the result at storage + i
+        LD HL, storage
+        ADD HL, BC
+        POP DE                  ; Fib(n)
+        LD A, E
+        LD (HL), A
 
-    ; Check loop condition
-    POP HL                  ; 0xE1 Restore i
+        ; Restore and advance
+        POP HL
+        INC BC                  ; i++
+        LD A, limit
+        CP A, C                 ; compare i against the limit
+        PUSH BC                 ; save i
+        JP NZ, LOOP
 
-    INC BC                  ; 0x03 i++
-    LD A, 0x0B              ; 0x3E Load 11 into A
-    LD A, (0x000B)         
-    CP A, C                 ; 0xB9 Compare i with 11
-    PUSH BC                 ; 0xC5 Save i
-    JP NZ, 0x800B           ; 0xC2 If i < 10, repeat loop
+;; End of program
+        HALT
 
-; End of program
-HALT                        ; 0x76 Halt execution
-
-
-;; 0x8040 -> Fibonacci function
-;; Input:
-;; Fib(n-2) => HL
-;; Fib(n-1) => DE
-;; Output:
-;; Fib(n)   => HL
-;; Fib(n-1) => DE (unchanged)
+;; Fibonacci step
+;; Input:  Fib(n-2) => HL, Fib(n-1) => DE
+;; Output: Fib(n)   => HL, Fib(n-1) => DE (unchanged)
+.org $8040
 FIB:
-    ADD HL, DE              ; 0x19 Fib(n  ) = Fib(n-1) + Fib(n-2)
-    RET                     ; 0xC9 Return with Fib(n) in HL
+        ADD HL, DE
+        RET
 
-;; 0xB000: Fibonacci numbers should be stored here
-2                           ; Fib(2) = 2
-3                           ; Fib(3) = 3
-5                           ; Fib(4) = 5
-8                           ; Fib(5) = 8
-13                          ; Fib(6) = 13
-21                          ; Fib(7) = 21
-34                          ; Fib(8) = 34
-55                          ; Fib(9) = 55
-89                          ; Fib(10) = 89
+;; Results are written at `storage` while the program runs.
+;; Expected: 2, 3, 5, 8, 13, 21, 34, 55, 89
+.org $8050
