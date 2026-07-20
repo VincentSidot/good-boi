@@ -10,13 +10,16 @@ const STACK_START = _memory.Memory.STACK_START;
 
 /// Load a binary file into CPU memory at the specified start address
 fn loadFileIntoMemory(cpu: *Cpu, path: []const u8, startAddress: u16) !void {
-    const file = try std.fs.cwd().openFile(
+    const io = std.testing.io;
+
+    const file = try std.Io.Dir.cwd().openFile(
+        io,
         path,
         .{},
     );
-    defer file.close();
+    defer file.close(io);
 
-    const fileSize = try file.getEndPos();
+    const fileSize = (try file.stat(io)).size;
     const fullSize: u64 = @as(u64, @intCast(startAddress)) + fileSize;
     if (fullSize > _memory.Memory.RAM_SIZE) {
         return error.FileTooLarge;
@@ -27,7 +30,8 @@ fn loadFileIntoMemory(cpu: *Cpu, path: []const u8, startAddress: u16) !void {
 
     const idx = cpu.mem.memory[beginIndex..endIndex];
 
-    _ = try file.read(idx);
+    var reader = file.reader(io, &.{});
+    try reader.interface.readSliceAll(idx);
 
     return;
 }

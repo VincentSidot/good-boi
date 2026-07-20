@@ -2,16 +2,16 @@ const std = @import("std");
 
 const Window = @import("gui/window.zig").Window;
 
-fn logFn(comptime message_level: std.log.Level, comptime scope: anytype, comptime format: []const u8, args: anytype) void {
+fn logFn(comptime message_level: std.log.Level, comptime scope: @EnumLiteral(), comptime format: []const u8, args: anytype) void {
     _ = scope; // unused
     const level_txt = comptime message_level.asText();
 
     var buffer: [255]u8 = undefined;
 
-    const stderr = std.debug.lockStderrWriter(&buffer);
-    defer std.debug.unlockStderrWriter();
+    const stderr = std.debug.lockStderr(&buffer).terminal();
+    defer std.debug.unlockStderr();
 
-    nosuspend stderr.print(level_txt ++ "| " ++ format ++ "\n", args) catch return;
+    nosuspend stderr.writer.print(level_txt ++ "| " ++ format ++ "\n", args) catch return;
 }
 
 pub const std_options: std.Options = .{

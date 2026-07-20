@@ -16,7 +16,11 @@ pub const Ppu = struct {
     }
 
     pub fn readVRAM(self: *const Self, address: u16) u8 {
+        _ = self;
+
         if (address >= TILE_SET_START and address <= TILE_SET_STOP) {} else if (address >= TILE_MAP_START and address <= TILE_MAP_STOP) {} else unreachable;
+
+        unimplemented("PPU VRAM read not implemented yet");
     }
 
     pub fn writeVRAM(self: *Self, address: u16, value: u8) void {

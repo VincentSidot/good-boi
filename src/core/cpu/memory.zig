@@ -8,7 +8,7 @@ pub const Memory = MemoryBuilder(if (utils.IS_TEST) .TESTING else .EMULATION);
 const MemoryEmulation = struct {
     const Self = @This();
 
-    pub const RAM_SIZE: u16 = 0x6000; // 32KB RAM (after cartridge ROM)
+    pub const RAM_SIZE: u16 = 0x6000; // 24KB, covering 0xA000-0xFFFF (everything after VRAM)
     pub const STACK_START: u16 = 0xFFFE;
     pub const PROGRAM_START: u16 = 0x0100;
 
@@ -104,6 +104,21 @@ const MemoryPurpose = enum {
 
 fn MemoryBuilder(purpose: MemoryPurpose) type {
     if (purpose == .TESTING) {
+        // TEMPORARY: a flat 64KB array with no ROM/VRAM dispatch, which is the
+        // memory model as it was before Cart and Ppu were split out.
+        //
+        // The tests cannot run against MemoryEmulation yet because both backends
+        // are still stubs: Cart.init leaves `rom` undefined, and Cart.writeROM /
+        // Ppu.writeVRAM both call unimplemented() and panic. Any test that stages
+        // data below 0x8000 (loading a program at PROGRAM_START, for instance)
+        // would panic before it ever reached the CPU.
+        //
+        // The cost is that MemoryEmulation is entirely untested, and the two
+        // variants have already drifted: RAM_START below exists only here, so the
+        // test suite no longer even compiles against MemoryEmulation.
+        //
+        // Drop this branch once Cart owns a writable buffer and Ppu backs VRAM
+        // with a real array, then migrate the tests onto MemoryEmulation.
         return struct {
             const Self = @This();
 
